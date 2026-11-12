@@ -98,8 +98,8 @@ function App() {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
       if (!session) { setAccess(null); return; }
-      // The audited active_access table has no branch_id column.
-      const { data, error } = await supabase.from('active_access').select('role,expires_at').eq('user_id', session.user.id).maybeSingle();
+      // Read the verified shop assignment as well as the login role.
+      const { data, error } = await supabase.from('active_access').select('role,expires_at,branch_id').eq('user_id', session.user.id).maybeSingle();
       if (error) throw error;
       setAccess(data && new Date(data.expires_at) > new Date() ? data : null);
     } catch (error) { console.error('Access refresh failed:', error); setAccess(null); }
@@ -131,16 +131,36 @@ function App() {
     if (!data?.ok) throw Error(data?.error || 'PIN verification was not accepted.');
     const { data: { session }, error: afterError } = await timeout(supabase.auth.getSession(), 'Session confirmation');
     if (afterError || !session) throw Error('PIN accepted, but the login session is missing.');
-    const { data: accessRow, error: accessError } = await timeout(supabase.from('active_access').select('role,expires_at').eq('user_id', session.user.id).maybeSingle(), 'Access lookup');
+    const { data: accessRow, error: accessError } = await timeout(supabase.from('active_access').select('role,expires_at,branch_id').eq('user_id', session.user.id).maybeSingle(), 'Access lookup');
     if (accessError) throw Error('PIN accepted, but access lookup failed: ' + accessError.message);
     if (!accessRow) throw Error('PIN accepted, but no access record is visible for this session.');
     if (new Date(accessRow.expires_at) <= new Date()) throw Error('PIN accepted, but the access record has expired.');
     setAccess(accessRow); setLoading(false);
   }
   async function verifyShop(branchId, pin) {
-    const { data, error } = await supabase.functions.invoke('verify-shop-pin', { body: { branch_id: branchId, pin } });
-    if (error || !data?.ok) throw Error(data?.error || 'Shop verification failed');
-    await refresh();
+    if (!branchId || !/^\\d{6}$/.test(pin)) {
+      throw Error('Select a shop and enter its 6-digit PIN.');
+    }
+    // Database RPC checks the active seller session, verifies the hashed shop PIN,
+    // enforces the failed-attempt lockout, and assigns the branch server-side.
+    const { data, error } = await supabase.rpc('verify_shop_pin', {
+      p_branch_id: branchId,
+      p_pin: pin
+    });
+    if (error) throw Error(error.message || 'Shop verification failed.');
+    if (data !== true) throw Error('Incorrect shop PIN. Please try again.');
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) throw Error('Session expired. Please sign in again.');
+    const { data: verified, error: accessError } = await supabase
+      .from('active_access')
+      .select('role,expires_at,branch_id')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    if (accessError || !verified || verified.role !== 'seller' ||
+        verified.branch_id !== branchId || new Date(verified.expires_at) <= new Date()) {
+      throw Error('Shop PIN accepted, but shop access could not be confirmed.');
+    }
+    setAccess(verified);
   }
   async function logout() { await supabase?.auth.signOut(); setAccess(null); }
   if (loading) return <div className="center"><div className="spinner" />Loading...</div>;
