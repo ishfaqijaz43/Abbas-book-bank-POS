@@ -138,7 +138,7 @@ function App() {
     setAccess(accessRow); setLoading(false);
   }
   async function verifyShop(branchId, pin) {
-    if (!branchId || !/^\\d{6}$/.test(pin)) {
+    if (!branchId || !/^\d{6}$/.test(pin)) {
       throw Error('Select a shop and enter its 6-digit PIN.');
     }
     // Database RPC checks the active seller session, verifies the hashed shop PIN,
