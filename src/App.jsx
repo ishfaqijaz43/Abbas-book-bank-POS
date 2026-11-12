@@ -8,19 +8,43 @@ function App() {
  const [access,setAccess]=useState(null),[loading,setLoading]=useState(true);
  const refresh=useCallback(async()=>{
   if(!supabase){setLoading(false);return;}
-  const {data:{session}}=await supabase.auth.getSession();
-  if(!session){setAccess(null);setLoading(false);return;}
-  const {data}=await supabase.from('active_access').select('role,expires_at,branch_id').maybeSingle();
-  setAccess(data && new Date(data.expires_at)>new Date()?data:null);setLoading(false);
+  try{
+   const {data:{session},error:sessionError}=await supabase.auth.getSession();
+   if(sessionError)throw sessionError;
+   if(!session){setAccess(null);return;}
+   const {data,error}=await supabase.from('active_access').select('role,expires_at,branch_id').eq('user_id',session.user.id).maybeSingle();
+   if(error)throw error;
+   setAccess(data && new Date(data.expires_at)>new Date()?data:null);
+  }catch(e){console.error('Access refresh failed:',e);setAccess(null)}
+  finally{setLoading(false)}
  },[]);
- useEffect(()=>{refresh();if(!supabase)return;const {data:{subscription}}=supabase.auth.onAuthStateChange(()=>{setTimeout(refresh,0)});return()=>subscription.unsubscribe()},[refresh]);
+ useEffect(()=>{refresh();if(!supabase)return;const {data:{subscription}}=supabase.auth.onAuthStateChange(()=>{setTimeout(()=>{refresh()},0)});return()=>subscription.unsubscribe()},[refresh]);
  async function login(pin){
   if(!configured)throw Error('Configure Supabase environment variables first.');
-  await supabase.auth.signOut();
-  const {error:anonError}=await supabase.auth.signInAnonymously();if(anonError)throw anonError;
-  const {data,error}=await supabase.functions.invoke('verify-pin',{body:{pin}});
-  if(error || !data?.ok){await supabase.auth.signOut();throw Error(data?.error || 'Invalid PIN or login temporarily unavailable');}
-  await refresh();
+  const timeout=(promise,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(Error(label+' timed out. Please retry.')),15000))]);
+  const {data:{session:existing},error:sessionError}=await timeout(supabase.auth.getSession(),'Session check');
+  if(sessionError)throw Error('Session check failed: '+sessionError.message);
+  if(!existing){
+   const {error:anonError}=await timeout(supabase.auth.signInAnonymously(),'Anonymous sign-in');
+   if(anonError)throw Error('Anonymous sign-in failed: '+anonError.message);
+  }
+  const {data,error}=await timeout(supabase.functions.invoke('verify-pin',{body:{pin}}),'PIN verification');
+  if(error){
+   let detail=error.message;
+   if(error.context && typeof error.context.json==='function'){
+    try{const body=await error.context.json();detail=body?.error||detail}catch{}
+   }
+   throw Error('PIN verification failed: '+detail);
+  }
+  if(!data?.ok)throw Error(data?.error||'PIN verification was not accepted.');
+  const {data:{session},error:afterError}=await timeout(supabase.auth.getSession(),'Session confirmation');
+  if(afterError||!session)throw Error('PIN accepted, but the login session is missing.');
+  const {data:accessRow,error:accessError}=await timeout(supabase.from('active_access').select('role,expires_at,branch_id').eq('user_id',session.user.id).maybeSingle(),'Access lookup');
+  if(accessError)throw Error('PIN accepted, but access lookup failed: '+accessError.message);
+  if(!accessRow)throw Error('PIN accepted, but no access record is visible for this session.');
+  if(new Date(accessRow.expires_at)<=new Date())throw Error('PIN accepted, but the access record has expired.');
+  setAccess(accessRow);
+  setLoading(false);
  }
  async function verifyShop(branchId,pin){
   const {data,error}=await supabase.functions.invoke('verify-shop-pin',{body:{branch_id:branchId,pin}});
