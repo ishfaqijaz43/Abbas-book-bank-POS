@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
 import { BookOpen, LayoutDashboard, School, GraduationCap, Package, ShoppingCart, LogOut, Menu, Search, Plus, Trash2, CreditCard, Store, ArrowLeft, KeyRound } from 'lucide-react';
 import { configured, supabase } from './supabase';
+import { Operations } from './Operations';
 
 const abbasResponsiveStyles = `
 .abb-page { width:100%; min-width:0; max-width:1180px; margin:0 auto; }
@@ -207,12 +208,12 @@ function ShopManager() {
   </>;
 }
 
-const adminNav=[['/admin','Dashboard',LayoutDashboard],['/admin/schools','Schools & Grades',School],['/admin/products','Book Inventory',Package],['/admin/sales','Sales',ShoppingCart],['/admin/shops','Manage Shops',Store]];
+const adminNav=[['/admin','Dashboard',LayoutDashboard],['/admin/schools','Schools & Grades',School],['/admin/products','Book Inventory',Package],['/admin/sales','Sales',ShoppingCart],['/admin/shops','Manage Shops',Store],['/admin/operations','Purchasing & Transfers',Package]];
 const sellerNav=[['/seller','New Sale',ShoppingCart],['/seller/catalog','Browse Books',BookOpen],['/seller/history','My Sales',LayoutDashboard]];
 function Shell({role,branchId,logout}) {
   const [open,setOpen]=useState(false);const nav=role==='admin'?adminNav:sellerNav;
   return <div className="shell"><style>{abbasResponsiveStyles}</style><aside className={'sidebar '+(open?'open':'')}><div className="side-brand"><span className="brand-icon small"><BookOpen/></span><span><b>ABBAS</b><small>BOOK BANK POS</small></span></div><div className="role-label">{role==='admin'?'ADMIN WORKSPACE':'SELLER WORKSPACE'}</div><nav>{nav.map(([url,label,Icon])=><NavLink key={url} to={url} end onClick={()=>setOpen(false)} className={({isActive})=>isActive?'nav active':'nav'}><Icon size={19}/>{label}</NavLink>)}</nav><div className="sidebar-bottom"><button className="nav" onClick={logout}><LogOut size={19}/>Sign out</button></div></aside>
-    <div className="workspace"><header className="topbar"><button className="icon-btn mobile-only" onClick={()=>setOpen(!open)}><Menu/></button><div><b>Abbas Book Bank</b><span className="top-sub">{role==='admin'?'Business management':'Sales counter · Selected shop'}</span></div><span className="role-pill">{role==='admin'?'Administrator':'Seller'}</span></header><div className="content"><Routes>{role==='admin'?<><Route path="/admin" element={<Dashboard/>}/><Route path="/admin/schools" element={<Schools/>}/><Route path="/admin/products" element={<Products admin/>}/><Route path="/admin/sales" element={<SalesHistory admin/>}/><Route path="/admin/shops" element={<ShopManager/>}/><Route path="*" element={<Navigate to="/admin"/>}/></>:<><Route path="/seller" element={<POS branchId={branchId}/>}/><Route path="/seller/catalog" element={<Products/>}/><Route path="/seller/history" element={<SalesHistory/>}/><Route path="*" element={<Navigate to="/seller"/>}/></>}</Routes></div></div>{open&&<div className="overlay mobile-only" onClick={()=>setOpen(false)}/>}</div>;
+    <div className="workspace"><header className="topbar"><button className="icon-btn mobile-only" onClick={()=>setOpen(!open)}><Menu/></button><div><b>Abbas Book Bank</b><span className="top-sub">{role==='admin'?'Business management':'Sales counter · Selected shop'}</span></div><span className="role-pill">{role==='admin'?'Administrator':'Seller'}</span></header><div className="content"><Routes>{role==='admin'?<><Route path="/admin" element={<Dashboard/>}/><Route path="/admin/schools" element={<Schools/>}/><Route path="/admin/products" element={<Products admin/>}/><Route path="/admin/sales" element={<SalesHistory admin/>}/><Route path="/admin/shops" element={<ShopManager/>}/><Route path="/admin/operations" element={<Operations/>}/><Route path="*" element={<Navigate to="/admin"/>}/></>:<><Route path="/seller" element={<POS branchId={branchId}/>}/><Route path="/seller/catalog" element={<Products/>}/><Route path="/seller/history" element={<SalesHistory/>}/><Route path="*" element={<Navigate to="/seller"/>}/></>}</Routes></div></div>{open&&<div className="overlay mobile-only" onClick={()=>setOpen(false)}/>}</div>;
 }
 function PageHead({title,desc,action}) {return <div className="page-head"><div><h1>{title}</h1><p className="muted">{desc}</p></div>{action}</div>;}
 function Notice({message}) {return message?<p className="error" role="alert">{message}</p>:null;}
