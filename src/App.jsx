@@ -209,7 +209,7 @@ function ShopManager() {
   </>;
 }
 
-const adminNav=[['/admin','Dashboard',LayoutDashboard],['/admin/schools','Schools & Grades',School],['/admin/products','Book Inventory',Package],['/admin/sales','Sales',ShoppingCart],['/admin/shops','Manage Shops',Store],['/admin/operations','Purchasing & Transfers',Package],['/admin/returns','Returns & Exchanges',ShoppingCart],['/admin/staff','Staff Directory',Store],['/admin/reports','Reports & Audit',LayoutDashboard]];
+const adminNav=[['/admin','Dashboard',LayoutDashboard],['/admin/schools','Schools & Grades',School],['/admin/products','Products & Inventory',Package],['/admin/sales','Sales',ShoppingCart],['/admin/shops','Manage Shops',Store],['/admin/operations','Purchasing & Transfers',Package],['/admin/returns','Returns & Exchanges',ShoppingCart],['/admin/staff','Staff Directory',Store],['/admin/reports','Reports & Audit',LayoutDashboard]];
 const sellerNav=[['/seller','New Sale',ShoppingCart],['/seller/catalog','Browse Books',BookOpen],['/seller/history','My Sales',LayoutDashboard],['/seller/stock','My Shop Stock',Package],['/seller/returns','Returns & Exchanges',ShoppingCart]];
 function Shell({role,branchId,logout}) {
   const [open,setOpen]=useState(false);const nav=role==='admin'?adminNav:sellerNav;
@@ -265,14 +265,16 @@ function Schools() {
   </div>;
 }
 
+const PRODUCT_CATEGORIES=['Books & textbooks','School courses','Pens & pencils','Notebooks & registers','Geometry & mathematics','Art & craft','Office stationery','Other products'];
+
 function Products({admin=false}) {
   const [products,setProducts]=useState([]),[shops,setShops]=useState([]),[stock,setStock]=useState([]);
-  const [name,setName]=useState(''),[sku,setSku]=useState(''),[price,setPrice]=useState('');
+  const [name,setName]=useState(''),[sku,setSku]=useState(''),[price,setPrice]=useState(''),[category,setCategory]=useState('Books & textbooks');
   const [opening,setOpening]=useState({}),[branch,setBranch]=useState(''),[quantities,setQuantities]=useState({}),[reason,setReason]=useState('');
-  const [showArchived,setShowArchived]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[success,setSuccess]=useState('');
+  const [categoryFilter,setCategoryFilter]=useState('All categories'),[showArchived,setShowArchived]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[success,setSuccess]=useState('');
   const load=useCallback(async()=>{
     const [p,b,s]=await Promise.all([
-      supabase.from('products').select('id,name,sku,price,is_active').order('name'),
+      supabase.from('products').select('id,name,sku,price,is_active,category').order('name'),
       supabase.from('branches').select('id,name,enabled').order('name'),
       supabase.from('stock').select('branch_id,product_id,quantity')
     ]);
@@ -295,7 +297,7 @@ function Products({admin=false}) {
     for(const shop of shops){const raw=opening[shop.id]??'0';const value=Number(raw);if(raw===''||!Number.isSafeInteger(value)||value<0){setError('Enter a valid whole-number quantity for '+shop.name);return;}}
     setBusy(true);setError('');setSuccess('');
     try{
-      const {data:created,error:insertError}=await supabase.from('products').insert({name:n,sku:sku.trim()||null,price:p}).select('id').single();
+      const {data:created,error:insertError}=await supabase.from('products').insert({name:n,sku:sku.trim()||null,price:p,category}).select('id').single();
       if(insertError)throw insertError;
       // Stock is saved through the audited admin-only RPC, never by direct table writes.
       // Separate RPCs are not one transaction: if one fails, keep the book and report partial progress.
@@ -305,13 +307,13 @@ function Products({admin=false}) {
         const {error:stockError}=await supabase.rpc('admin_set_stock_quantity',{p_branch_id:shop.id,p_product_id:created.id,p_quantity:value,p_reason:'Opening stock'});
         if(stockError)failed.push(`${shop.name}: ${stockError.message}`);
       }
-      setName('');setSku('');setPrice('');setOpening({});
+      setName('');setSku('');setPrice('');setCategory('Books & textbooks');setOpening({});
       try{await load();}catch(loadError){setError('Book created, but refresh failed: '+loadError.message);return;}
       if(failed.length)setError('Book was created, but some opening stock did not save. Do not add the book again. Use Manage stock to correct it. '+failed.join(' | '));
       else setSuccess('Book created and opening stock saved for each shop.');
     }catch(err){setError(err.message);}finally{setBusy(false);}
   }
-  async function edit(p){const n=window.prompt('Book name',p.name);if(n===null)return;const s=window.prompt('SKU / barcode (blank allowed)',p.sku||'');if(s===null)return;const input=window.prompt('Price in PKR',String(p.price));if(input===null)return;const value=Number(input);if(!n.trim()||!input.trim()||!Number.isFinite(value)||value<0){setError('Invalid name or price.');return;}await mutate(()=>supabase.from('products').update({name:n.trim(),sku:s.trim()||null,price:value}).eq('id',p.id));}
+  async function edit(p){const newCategory=window.prompt('Category: '+PRODUCT_CATEGORIES.join(', '),p.category||'Books & textbooks');if(newCategory===null)return;if(!PRODUCT_CATEGORIES.includes(newCategory.trim())){setError('Choose a category from the listed options.');return;}const n=window.prompt('Book name',p.name);if(n===null)return;const s=window.prompt('SKU / barcode (blank allowed)',p.sku||'');if(s===null)return;const input=window.prompt('Price in PKR',String(p.price));if(input===null)return;const value=Number(input);if(!n.trim()||!input.trim()||!Number.isFinite(value)||value<0){setError('Invalid name or price.');return;}await mutate(()=>supabase.from('products').update({name:n.trim(),sku:s.trim()||null,price:value,category:newCategory.trim()}).eq('id',p.id));}
   async function saveStock(p){
     if(!branch){setError('Choose a shop.');return;}
     const key=`${branch}:${p.id}`,raw=quantities[key]??String(qty(p.id,branch)),value=Number(raw);
@@ -319,25 +321,25 @@ function Products({admin=false}) {
     if(reason.trim().length<3){setError('Enter a reason of at least 3 characters, e.g. New delivery.');return;}
     if(await mutate(()=>supabase.rpc('admin_set_stock_quantity',{p_branch_id:branch,p_product_id:p.id,p_quantity:value,p_reason:reason.trim()})))setQuantities(v=>{const next={...v};delete next[key];return next;});
   }
-  const visible=products.filter(p=>admin?(showArchived||p.is_active):p.is_active);
-  return <div className="abb-page"><PageHead title={admin?'Book inventory':'Book catalog'} desc={admin?'Manage books and separate stock for every shop':'Browse books and current stock'}/><Notice message={error}/>{success&&<p className="success">{success}</p>}
-    {admin&&<section className="panel abb-panel"><div className="abb-section-title"><h2>Add book or item</h2><span className="abb-hint">Set starting copies for each shop when adding a book</span></div>
+  const visible=products.filter(p=>(admin?(showArchived||p.is_active):p.is_active)&&(categoryFilter==='All categories'||(p.category||'Books & textbooks')===categoryFilter));
+  return <div className="abb-page"><PageHead title={admin?'Products & inventory':'Book catalog'} desc={admin?'Manage books, stationery and stock across every shop':'Browse products and current stock'}/><Notice message={error}/>{success&&<p className="success">{success}</p>}
+    {admin&&<section className="panel abb-panel"><div className="abb-section-title"><h2>Add product</h2><span className="abb-hint">Set opening quantity for each shop</span></div>
       <form className="abb-add-form" onSubmit={add}>
-        <div className="abb-field"><label>Book name</label><input required placeholder="e.g. English Grade 5" value={name} onChange={e=>setName(e.target.value)}/></div>
-        <div className="abb-field"><label>Barcode / SKU</label><input placeholder="Optional" value={sku} onChange={e=>setSku(e.target.value)}/></div>
+        <div className="abb-field"><label>Product name</label><input required placeholder="e.g. English Grade 5" value={name} onChange={e=>setName(e.target.value)}/></div>
+        <div className="abb-field"><label>Category</label><select value={category} onChange={e=>setCategory(e.target.value)}>{PRODUCT_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></div><div className="abb-field"><label>Barcode / SKU</label><input placeholder="Optional" value={sku} onChange={e=>setSku(e.target.value)}/></div>
         <div className="abb-field"><label>Price (PKR)</label><input required type="number" min="0" step="0.01" placeholder="0.00" value={price} onChange={e=>setPrice(e.target.value)}/></div>
         <div className="abb-opening"><strong>Opening stock by shop</strong><div className="abb-opening-grid">{shops.map(shop=><div className="abb-field" key={shop.id}><label htmlFor={'opening-'+shop.id}>{shop.name}</label><input id={'opening-'+shop.id} type="number" min="0" step="1" inputMode="numeric" value={opening[shop.id]??'0'} onChange={e=>setOpening(v=>({...v,[shop.id]:e.target.value}))}/></div>)}</div><p className="abb-hint">Enter actual physical copies. Zero means no stock at that shop.</p></div>
-        <button className="primary abb-btn abb-add-submit" disabled={busy||!shops.length}><Plus size={17}/>{busy?'Saving…':'Add book & opening stock'}</button>
+        <button className="primary abb-btn abb-add-submit" disabled={busy||!shops.length}><Plus size={17}/>{busy?'Saving…':'Add product & opening stock'}</button>
       </form></section>}
     {admin&&<section className="panel abb-panel"><div className="abb-section-title"><h2>Manage stock</h2><span className="abb-hint">Changes are recorded in inventory history</span></div>
       <div className="abb-stock-settings"><div className="abb-field"><label>Shop to update</label><select aria-label="Choose shop" value={branch} onChange={e=>setBranch(e.target.value)}>{shops.map(shop=><option key={shop.id} value={shop.id}>{shop.name}{shop.enabled?'':' (disabled)'}</option>)}</select></div><div className="abb-field"><label>Reason for stock change <span className="abb-required">*</span></label><input aria-label="Stock adjustment reason" placeholder="e.g. New delivery" value={reason} onChange={e=>setReason(e.target.value)}/></div></div>
       <div className="abb-setting-footer"><p className="abb-hint">Select a shop, enter a reason, then update a book below. Other shops are unaffected.</p><label className="abb-check"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show archived books</label></div>
     </section>}
-    <section className="panel abb-panel"><div className="abb-section-title"><h2>Books <span className="abb-count">{visible.length}</span></h2><span className="abb-hint">Current quantities by shop</span></div>
-      <div className="abb-books">{visible.map(p=><article className="abb-book" key={p.id}>
-        <div className="abb-book-top"><div className="abb-book-name"><span className="abb-book-icon"><BookOpen size={20}/></span><div><h3>{p.name}</h3><span className="abb-hint">SKU: {p.sku||'Not set'}{!p.is_active?' · Archived':''}</span></div></div><strong className="abb-price">{money(p.price)}</strong></div>
+    <section className="panel abb-panel"><div className="abb-section-title"><h2>Products <span className="abb-count">{visible.length}</span></h2><span className="abb-hint">Current quantities by shop</span></div>
+      <div className="abb-field" style={{maxWidth:320,marginBottom:16}}><label>Filter products by category</label><select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option>All categories</option>{PRODUCT_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div><div className="abb-books">{visible.map(p=><article className="abb-book" key={p.id}>
+        <div className="abb-book-top"><div className="abb-book-name"><span className="abb-book-icon"><BookOpen size={20}/></span><div><h3>{p.name}</h3><span className="abb-hint">{p.category||'Books & textbooks'} · SKU: {p.sku||'Not set'}{!p.is_active?' · Archived':''}</span></div></div><strong className="abb-price">{money(p.price)}</strong></div>
         <div className="abb-shop-grid">{shops.map(shop=><div key={shop.id} className={'abb-shop-qty '+(shop.id===branch&&admin?'abb-shop-selected':'')}><span>{shop.name}</span><strong>{qty(p.id,shop.id)} <small>copies</small></strong></div>)}</div>
-        {admin&&<div className="abb-book-footer"><div className="abb-stock-edit"><div className="abb-field"><label>Copies at selected shop</label><input aria-label={'Copies for '+p.name} type="number" inputMode="numeric" min="0" step="1" value={quantities[`${branch}:${p.id}`]??String(qty(p.id,branch))} onChange={e=>setQuantities(v=>({...v,[`${branch}:${p.id}`]:e.target.value}))}/></div><button className="primary abb-btn" disabled={busy||!branch} onClick={()=>saveStock(p)}>Save stock</button></div><div className="abb-actions abb-book-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>edit(p)}>Edit book</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('products').update({is_active:!p.is_active}).eq('id',p.id),p.is_active?'Archive this book? Sales history will remain.':'Restore this book?')}>{p.is_active?'Archive':'Restore'}</button></div></div>}
+        {admin&&<div className="abb-book-footer"><div className="abb-stock-edit"><div className="abb-field"><label>Copies at selected shop</label><input aria-label={'Copies for '+p.name} type="number" inputMode="numeric" min="0" step="1" value={quantities[`${branch}:${p.id}`]??String(qty(p.id,branch))} onChange={e=>setQuantities(v=>({...v,[`${branch}:${p.id}`]:e.target.value}))}/></div><button className="primary abb-btn" disabled={busy||!branch} onClick={()=>saveStock(p)}>Save stock</button></div><div className="abb-actions abb-book-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>edit(p)}>Edit product</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('products').update({is_active:!p.is_active}).eq('id',p.id),p.is_active?'Archive this book? Sales history will remain.':'Restore this book?')}>{p.is_active?'Archive':'Restore'}</button></div></div>}
       </article>)}</div>{!visible.length&&<p className="empty">No books to display.</p>}
     </section>
   </div>;
@@ -353,7 +355,7 @@ function POS({branchId}) {
   useEffect(()=>{
     let active=true;
     Promise.all([
-      supabase.from('products').select('id,name,price,sku').eq('is_active',true).order('name'),
+      supabase.from('products').select('id,name,price,sku,category').eq('is_active',true).order('name'),
       supabase.from('schools').select('id,name').order('name'),
       supabase.from('grades').select('id,name,school_id').order('name'),
       supabase.from('grade_books').select('grade_id,product_id,quantity'),
@@ -396,7 +398,7 @@ function POS({branchId}) {
     changeCart(prev=>prev.map(x=>x.id===id?{...x,qty:x.qty+delta}:x).filter(x=>x.qty>0));
   };
   const normalize=x=>(x||'').toLowerCase();
-  const isStationery=p=>/\b(pen|pencil|eraser|sharpener|notebook|note book|register|ruler|marker|highlighter|glue|tape|scale|file|folder|paper|sheet|geometry box|compass|crayon|colour pencil|color pencil|paint|brush|sketch|stapler|stationery|stationary)\b/i.test(p.name);
+  const isStationery=p=>(p.category||'Books & textbooks')!=='Books & textbooks'&&(p.category||'Books & textbooks')!=='School courses';
   const categories=[{id:'schools',icon:'🏫',title:'School courses',detail:'School → grade → books',tone:'school'},{id:'books',icon:'📚',title:'Individual books',detail:'English, Urdu and more',tone:'books'},{id:'stationery',icon:'✏️',title:'Stationery',detail:'Pens, notebooks and supplies',tone:'stationery'},{id:'quick',icon:'▦',title:'Quick sale',detail:'Search or scan barcode',tone:'quick'}];
   const filtered=products.filter(p=>(view!=='stationery'||isStationery(p))&&(view!=='books'||!isStationery(p))&&normalize(p.name+' '+(p.sku||'')).includes(normalize(query)));
   const navigate=target=>{setView(target);setQuery('');setError('')};
@@ -434,7 +436,7 @@ function POS({branchId}) {
       {view==='schools'?<div className="retail-tile-grid">{schools.map(s=><button className="retail-tile" key={s.id} onClick={()=>{setSchool(s.id);navigate('grades')}}><span>🏫</span><strong>{s.name}</strong><small>View grades →</small></button>)}{!schools.length&&<p className="empty">No schools available.</p>}</div>:
       view==='grades'?<div className="retail-tile-grid">{grades.filter(g=>g.school_id===school).map(g=><button className="retail-tile" key={g.id} onClick={()=>{setGrade(g.id);navigate('course')}}><span>🎓</span><strong>{g.name}</strong><small>View course →</small></button>)}{!grades.some(g=>g.school_id===school)&&<p className="empty">No grades for this school yet.</p>}</div>:
       view==='course'?<><section className="retail-course-banner"><div><small>{schools.find(x=>x.id===school)?.name} / {grades.find(x=>x.id===grade)?.name}</small><h2>Complete course</h2><p>{courseItems.length} assigned titles · {money(courseTotal)}</p></div><button className="primary" disabled={!courseItems.length} onClick={addCourse}>+ Add full course</button></section><div className="retail-product-grid">{courseItems.map(x=>listCard(x.product))}</div>{!courseItems.length&&<p className="empty">No books assigned to this grade.</p>}</>:
-      <><div className="retail-section-title"><h2>{view==='stationery'?'Stationery & supplies':view==='books'?'Books':'Search all items'}</h2><span>{filtered.length} items</span></div><div className="retail-product-grid">{filtered.slice(0,120).map(listCard)}</div>{!filtered.length&&<p className="empty">No matching products. Add them in Admin → Book Inventory first.</p>}</>}
+      <><div className="retail-section-title"><h2>{view==='stationery'?'Stationery & supplies':view==='books'?'Books':'Search all items'}</h2><span>{filtered.length} items</span></div><div className="retail-product-grid">{filtered.slice(0,120).map(listCard)}</div>{!filtered.length&&<p className="empty">No matching products. Add them in Admin → Products & Inventory first.</p>}</>}
       </>}
     </main>
     <aside className={'retail-cart '+(cartOpen?'retail-cart-open':'')}><div className="retail-cart-heading"><h2><ShoppingCart size={20}/> Current bill <span>{cart.reduce((n,x)=>n+x.qty,0)}</span></h2><button className="retail-cart-close" onClick={()=>setCartOpen(false)}>Close</button></div>
