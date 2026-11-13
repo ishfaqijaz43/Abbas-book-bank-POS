@@ -344,26 +344,105 @@ function Products({admin=false}) {
 }
 
 function POS({branchId}) {
-  const [products,setProducts]=useState([]),[q,setQ]=useState(''),[cart,setCart]=useState([]),[err,setErr]=useState(''),[success,setSuccess]=useState(''),[busy,setBusy]=useState(false);
-  const [schools,setSchools]=useState([]),[grades,setGrades]=useState([]),[links,setLinks]=useState([]),[selectedSchool,setSelectedSchool]=useState(''),[selectedGrade,setSelectedGrade]=useState('');
-  useEffect(()=>{Promise.all([supabase.from('products').select('id,name,price,sku').eq('is_active',true).order('name'),supabase.from('schools').select('*').order('name'),supabase.from('grades').select('*').order('name'),supabase.from('grade_books').select('*')]).then(([p,s,g,l])=>{setProducts(p.data||[]);setSchools(s.data||[]);setGrades(g.data||[]);setLinks(l.data||[]);setErr(getError(p,s,g,l));});},[]);
-  const add=(p,qty=1)=>{setRequestKey(crypto.randomUUID());setCart(items=>{const found=items.find(x=>x.id===p.id);return found?items.map(x=>x.id===p.id?{...x,qty:x.qty+qty}:x):[...items,{...p,qty}];});};
+  const [products,setProducts]=useState([]),[schools,setSchools]=useState([]),[grades,setGrades]=useState([]),[links,setLinks]=useState([]);
+  const [stock,setStock]=useState(null),[view,setView]=useState('home'),[school,setSchool]=useState(''),[grade,setGrade]=useState('');
+  const [query,setQuery]=useState(''),[cart,setCart]=useState([]),[held,setHeld]=useState(null);
+  const [error,setError]=useState(''),[success,setSuccess]=useState(null),[busy,setBusy]=useState(false);
+  const [method,setMethod]=useState('cash'),[cash,setCash]=useState(''),[requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
+  const [cartOpen,setCartOpen]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    Promise.all([
+      supabase.from('products').select('id,name,price,sku').eq('is_active',true).order('name'),
+      supabase.from('schools').select('id,name').order('name'),
+      supabase.from('grades').select('id,name,school_id').order('name'),
+      supabase.from('grade_books').select('grade_id,product_id,quantity'),
+      supabase.from('stock').select('product_id,quantity').eq('branch_id',branchId)
+    ]).then(([p,s,g,l,st])=>{
+      if(!active)return;
+      setProducts(p.data||[]);setSchools(s.data||[]);setGrades(g.data||[]);setLinks(l.data||[]);
+      if(!st.error)setStock(Object.fromEntries((st.data||[]).map(x=>[x.product_id,Number(x.quantity)])));
+      setError(getError(p,s,g,l));
+    }).catch(e=>{if(active)setError(e.message)});
+    return ()=>{active=false};
+  },[branchId]);
+  const quantityInCart=id=>cart.find(x=>x.id===id)?.qty||0;
+  const available=p=>stock===null?null:(stock[p.id]??0);
+  const canAdd=(p,n=1)=>available(p)===null||quantityInCart(p.id)+n<=available(p);
+  const changeCart=(next)=>{setRequestKey(crypto.randomUUID());setCart(next);setSuccess(null)};
+  const add=(p,n=1)=>{
+    if(!canAdd(p,n)){setError(`Not enough stock at this shop for ${p.name}.`);return}
+    setError('');
+    changeCart(prev=>{const found=prev.find(x=>x.id===p.id);return found?prev.map(x=>x.id===p.id?{...x,qty:x.qty+n}:x):[...prev,{...p,qty:n}]});
+  };
+  const courseItems=links.filter(x=>x.grade_id===grade).map(x=>({...x,product:products.find(p=>p.id===x.product_id)})).filter(x=>x.product);
+  const courseTotal=courseItems.reduce((sum,x)=>sum+Number(x.product.price)*Number(x.quantity||1),0);
+  const addCourse=()=>{
+    if(!courseItems.length){setError('No books are assigned to this grade.');return}
+    const requested=new Map();
+    for(const x of courseItems)requested.set(x.product.id,(requested.get(x.product.id)||0)+Number(x.quantity||1));
+    for(const [id,n] of requested){const p=products.find(x=>x.id===id);if(!canAdd(p,n)){setError(`Insufficient stock for ${p.name}. Course not added.`);return}}
+    changeCart(prev=>{
+      const next=prev.map(x=>({...x}));
+      for(const x of courseItems){const n=Number(x.quantity||1);const found=next.find(p=>p.id===x.product.id);if(found)found.qty+=n;else next.push({...x.product,qty:n})}
+      return next;
+    });
+    setError('');setCartOpen(true);
+  };
   const total=cart.reduce((sum,x)=>sum+Number(x.price)*x.qty,0);
-  function addCourse(){const selected=links.filter(l=>l.grade_id===selectedGrade);selected.forEach(l=>{const p=products.find(x=>x.id===l.product_id);if(p)add(p,l.quantity);});if(!selected.length)setErr('No books assigned to this grade yet.');}
-  const [method,setMethod]=useState('cash');
-  const [requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
+  const changeQty=(id,delta)=>{
+    const p=products.find(x=>x.id===id);
+    if(delta>0&&p&&!canAdd(p)){setError(`Insufficient stock for ${p.name}.`);return}
+    changeCart(prev=>prev.map(x=>x.id===id?{...x,qty:x.qty+delta}:x).filter(x=>x.qty>0));
+  };
+  const normalize=x=>(x||'').toLowerCase();
+  const isStationery=p=>/\b(pen|pencil|eraser|sharpener|notebook|note book|register|ruler|marker|highlighter|glue|tape|scale|file|folder|paper|sheet|geometry box|compass|crayon|colour pencil|color pencil|paint|brush|sketch|stapler|stationery|stationary)\b/i.test(p.name);
+  const categories=[{id:'schools',icon:'🏫',title:'School courses',detail:'School → grade → books',tone:'school'},{id:'books',icon:'📚',title:'Individual books',detail:'English, Urdu and more',tone:'books'},{id:'stationery',icon:'✏️',title:'Stationery',detail:'Pens, notebooks and supplies',tone:'stationery'},{id:'quick',icon:'▦',title:'Quick sale',detail:'Search or scan barcode',tone:'quick'}];
+  const filtered=products.filter(p=>(view!=='stationery'||isStationery(p))&&(view!=='books'||!isStationery(p))&&normalize(p.name+' '+(p.sku||'')).includes(normalize(query)));
+  const navigate=target=>{setView(target);setQuery('');setError('')};
+  const back=()=>navigate(view==='grades'?'schools':view==='course'?'grades':'home');
   async function checkout(){
     if(busy||!cart.length)return;
-    setBusy(true);setErr('');setSuccess('');
+    if(method==='cash'&&cash!==''&&Number(cash)<total){setError('Cash received is less than the total.');return}
+    setBusy(true);setError('');setSuccess(null);
     try{
-      const {data,error}=await supabase.rpc('pos_checkout',{p_items:cart.map(x=>({product_id:x.id,quantity:x.qty})),p_request_key:requestKey,p_method:method});
-      if(error)throw error;
-      setSuccess(`Sale completed. Receipt: ${data.sale_id} · Total: ${money(data.total)}. Save this receipt number.`);
-      setCart([]);setRequestKey(crypto.randomUUID());
-    }catch(e){setErr(e.message||'Checkout failed. Retry without changing the cart to avoid a duplicate sale.');}
-    finally{setBusy(false);}
+      const {data,error:checkoutError}=await supabase.rpc('pos_checkout',{p_items:cart.map(x=>({product_id:x.id,quantity:x.qty})),p_request_key:requestKey,p_method:method});
+      if(checkoutError)throw checkoutError;
+      setSuccess({id:data.sale_id,total:Number(data.total),method,items:cart.map(x=>({...x})),date:new Date().toLocaleString('en-PK')});
+      setCart([]);setCash('');setRequestKey(crypto.randomUUID());setCartOpen(false);
+      if(stock!==null)setStock(prev=>{const next={...prev};for(const x of cart)next[x.id]=(next[x.id]??0)-x.qty;return next});
+    }catch(e){setError(e.message||'Checkout failed. Please confirm sale status before retrying.')}
+    finally{setBusy(false)}
   }
-  return <><PageHead title="New sale" desc="Select individual books or complete school courses"/><Notice message={err}/>{success&&<p className="success">{success}</p>}<div className="pos-grid"><div className="stack"><section className="panel"><h2>School course</h2><div className="inline-form"><select value={selectedSchool} onChange={e=>{setSelectedSchool(e.target.value);setSelectedGrade('');}}><option value="">Select school</option>{schools.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><select value={selectedGrade} onChange={e=>setSelectedGrade(e.target.value)}><option value="">Select grade</option>{grades.filter(g=>g.school_id===selectedSchool).map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select><button className="primary" disabled={!selectedGrade} onClick={addCourse}>Add course</button></div></section><section className="panel"><h2>Find products</h2><div className="search"><Search size={18}/><input autoFocus placeholder="Search name, SKU or scan barcode" value={q} onChange={e=>setQ(e.target.value)}/></div><div className="product-list">{products.filter(p=>(p.name+' '+(p.sku||'')).toLowerCase().includes(q.toLowerCase())).slice(0,60).map(p=><button key={p.id} className="product-row" onClick={()=>add(p)}><span><b>{p.name}</b><small>{p.sku||'Book / stationery'}</small></span><span>{money(p.price)}<Plus size={16}/></span></button>)}</div></section></div><section className="panel cart-panel"><h2><ShoppingCart size={20}/>Current sale</h2>{!cart.length?<div className="empty">No items yet. Select a book or course to begin.</div>:cart.map(p=><div className="cart-item" key={p.id}><div><b>{p.name}</b><small>{money(p.price)} each</small></div><div className="qty"><button onClick={()=>{setRequestKey(crypto.randomUUID());setCart(a=>a.map(x=>x.id===p.id?{...x,qty:Math.max(1,x.qty-1)}:x));}}>−</button><span>{p.qty}</span><button onClick={()=>{setRequestKey(crypto.randomUUID());setCart(a=>a.map(x=>x.id===p.id?{...x,qty:x.qty+1}:x));}}>+</button><button className="danger-text" onClick={()=>{setRequestKey(crypto.randomUUID());setCart(a=>a.filter(x=>x.id!==p.id));}}><Trash2 size={16}/></button></div></div>)}<div className="cart-total"><span>Total payable</span><strong>{money(total)}</strong></div><label className="muted">Payment method <select value={method} onChange={e=>{setMethod(e.target.value);setRequestKey(crypto.randomUUID());}}><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label><button className="primary full" disabled={busy||!cart.length} onClick={checkout}><CreditCard size={19}/>{busy?"Processing…":"Complete sale"}</button><p className="tiny muted">Stock is deducted from your verified shop only. Payment is recorded, not charged electronically.</p></section></div></>;
+  function printReceipt(){
+    if(!success)return;
+    window.print();
+  }
+  const listCard=p=><button type="button" key={p.id} className="retail-product" onClick={()=>add(p)} disabled={available(p)!==null&&available(p)<=quantityInCart(p.id)}>
+    <span className="retail-product-icon">{isStationery(p)?'✏️':'📖'}</span>
+    <span className="retail-product-copy"><strong>{p.name}</strong><small>{p.sku||'Book / stationery'}{available(p)!==null?` · ${available(p)} in stock`:''}</small></span>
+    <span className="retail-product-action"><b>{money(p.price)}</b><span>+ Add</span></span>
+  </button>;
+  return <div className="retail-pos">
+    <div className="retail-header"><div><span className="retail-eyebrow">SELLER COUNTER</span><h1>New sale</h1><p>Find a course, book or stationery item in seconds.</p></div><div className="retail-header-actions"><button className="retail-outline" onClick={()=>{if(!cart.length)return;setHeld(cart);changeCart([]);setCartOpen(false)}} disabled={!cart.length}>Hold bill</button><button className="retail-outline" onClick={()=>{if(!held)return;changeCart(held);setHeld(null);setCartOpen(true)}} disabled={!held}>Resume{held?` (${held.length})`:''}</button></div></div>
+    {error&&<p className="error" role="alert">{error}</p>}
+    {success&&<section className="retail-receipt panel"><div><strong>✓ Sale completed</strong><p>Receipt #{success.id} · {money(success.total)}</p><small>{success.date}</small></div><button className="retail-outline" onClick={printReceipt}>Print receipt</button><div className="retail-print-only"><h2>Abbas Book Bank</h2><p>Receipt: {success.id}</p>{success.items.map(x=><p key={x.id}>{x.name} × {x.qty} — {money(x.price*x.qty)}</p>)}<strong>Total: {money(success.total)}</strong></div></section>}
+    <div className="retail-layout"><main className="retail-browse">
+      <label className="retail-search"><Search size={20}/><input value={query} onChange={e=>{setQuery(e.target.value);if(e.target.value&&view==='home')setView('quick')}} placeholder="Search book, stationery or scan barcode" aria-label="Search products or scan barcode"/></label>
+      {view==='home'?<><div className="retail-section-title"><h2>What are you selling?</h2><span>Choose a category</span></div><div className="retail-categories">{categories.map(c=><button type="button" key={c.id} className={'retail-category '+c.tone} onClick={()=>navigate(c.id)}><span className="retail-category-icon">{c.icon}</span><strong>{c.title}</strong><small>{c.detail}</small><span className="retail-category-arrow">Explore →</span></button>)}</div><div className="retail-section-title"><h2>Quick add</h2><span>Available products</span></div><div className="retail-product-grid">{products.slice(0,8).map(listCard)}</div></>:
+      <><div className="retail-breadcrumb"><button onClick={back}>← Back</button><span>{view==='schools'?'Select a school':view==='grades'?'Select a grade':view==='course'?'Course books':view==='stationery'?'Stationery':view==='books'?'Individual books':'Quick sale'}</span></div>
+      {view==='schools'?<div className="retail-tile-grid">{schools.map(s=><button className="retail-tile" key={s.id} onClick={()=>{setSchool(s.id);navigate('grades')}}><span>🏫</span><strong>{s.name}</strong><small>View grades →</small></button>)}{!schools.length&&<p className="empty">No schools available.</p>}</div>:
+      view==='grades'?<div className="retail-tile-grid">{grades.filter(g=>g.school_id===school).map(g=><button className="retail-tile" key={g.id} onClick={()=>{setGrade(g.id);navigate('course')}}><span>🎓</span><strong>{g.name}</strong><small>View course →</small></button>)}{!grades.some(g=>g.school_id===school)&&<p className="empty">No grades for this school yet.</p>}</div>:
+      view==='course'?<><section className="retail-course-banner"><div><small>{schools.find(x=>x.id===school)?.name} / {grades.find(x=>x.id===grade)?.name}</small><h2>Complete course</h2><p>{courseItems.length} assigned titles · {money(courseTotal)}</p></div><button className="primary" disabled={!courseItems.length} onClick={addCourse}>+ Add full course</button></section><div className="retail-product-grid">{courseItems.map(x=>listCard(x.product))}</div>{!courseItems.length&&<p className="empty">No books assigned to this grade.</p>}</>:
+      <><div className="retail-section-title"><h2>{view==='stationery'?'Stationery & supplies':view==='books'?'Books':'Search all items'}</h2><span>{filtered.length} items</span></div><div className="retail-product-grid">{filtered.slice(0,120).map(listCard)}</div>{!filtered.length&&<p className="empty">No matching products. Add them in Admin → Book Inventory first.</p>}</>}
+      </>}
+    </main>
+    <aside className={'retail-cart '+(cartOpen?'retail-cart-open':'')}><div className="retail-cart-heading"><h2><ShoppingCart size={20}/> Current bill <span>{cart.reduce((n,x)=>n+x.qty,0)}</span></h2><button className="retail-cart-close" onClick={()=>setCartOpen(false)}>Close</button></div>
+      {!cart.length?<div className="retail-cart-empty"><span>🛒</span><strong>Your cart is empty</strong><p>Tap any product or complete course to add it.</p></div>:<div className="retail-cart-items">{cart.map(p=><div className="retail-cart-item" key={p.id}><div><strong>{p.name}</strong><small>{money(p.price)} each</small></div><div className="retail-qty"><button aria-label={`Remove one ${p.name}`} onClick={()=>changeQty(p.id,-1)}>−</button><b>{p.qty}</b><button aria-label={`Add one ${p.name}`} onClick={()=>changeQty(p.id,1)}>+</button><button aria-label={`Remove ${p.name}`} className="retail-remove" onClick={()=>changeCart(a=>a.filter(x=>x.id!==p.id))}><Trash2 size={15}/></button></div><strong>{money(p.price*p.qty)}</strong></div>)}</div>}
+      <div className="retail-cart-footer"><div className="retail-total"><span>Total payable</span><strong>{money(total)}</strong></div><label>Payment method<select value={method} onChange={e=>{setMethod(e.target.value);setRequestKey(crypto.randomUUID())}}><option value="cash">Cash</option><option value="card">Card (record only)</option><option value="bank_transfer">Bank transfer (record only)</option><option value="other">Other</option></select></label>{method==='cash'&&<label>Cash received (optional)<input type="number" min="0" step=".01" inputMode="decimal" value={cash} onChange={e=>setCash(e.target.value)} placeholder="Enter amount paid"/>{cash!==''&&Number(cash)>=total&&<small>Change: {money(Number(cash)-total)}</small>}</label>}<button className="primary full" disabled={!cart.length||busy} onClick={checkout}><CreditCard size={18}/>{busy?'Processing…':'Complete sale'}</button><p>Stock is deducted from the verified shop. Non-cash methods record payments only.</p></div>
+    </aside></div>
+    <button className="retail-mobile-bill" onClick={()=>setCartOpen(true)}><ShoppingCart size={18}/> View bill · {cart.reduce((n,x)=>n+x.qty,0)} items <strong>{money(total)}</strong></button>
+  </div>;
 }
 
 function SalesHistory({admin=false}) {
