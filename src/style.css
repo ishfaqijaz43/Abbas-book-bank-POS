@@ -84,3 +84,19 @@
     page-break-after: auto !important;
   }
 }
+/* ABBAS POS 58mm receipt print correction v1.
+   Append to src/style.css after all existing rules. */
+@page { size: 58mm 250mm; margin: 0; }
+@media print {
+  html, body, #root { width:58mm !important; min-width:0 !important; max-width:58mm !important; height:auto !important; min-height:0 !important; overflow:visible !important; margin:0 !important; padding:0 !important; background:#fff !important; }
+  body * { visibility:hidden !important; }
+  .retail-print-only, .retail-print-only *, .thermal-receipt, .thermal-receipt * { visibility:visible !important; }
+  .receipt-action-tools, .receipt-action-tools *, .retail-receipt > div:first-child, .retail-header, .retail-layout, .retail-mobile-bill, .sidebar, .topbar { display:none !important; }
+  .retail-receipt, .retail-print-only, .thermal-receipt { border:0 !important; border-radius:0 !important; box-shadow:none !important; transform:none !important; }
+  .retail-receipt { position:static !important; display:block !important; width:58mm !important; max-width:58mm !important; height:auto !important; min-height:0 !important; margin:0 !important; padding:0 !important; overflow:visible !important; }
+  .retail-print-only { position:absolute !important; display:block !important; left:0 !important; top:0 !important; width:58mm !important; max-width:58mm !important; height:auto !important; min-height:0 !important; margin:0 !important; padding:0 5mm !important; box-sizing:border-box !important; overflow:visible !important; }
+  .thermal-receipt { display:block !important; width:48mm !important; max-width:48mm !important; height:auto !important; min-height:0 !important; margin:0 !important; padding:0 !important; overflow:visible !important; break-inside:auto !important; page-break-inside:auto !important; }
+  .thermal-receipt table { width:100% !important; }
+  .thermal-receipt tr { break-inside:avoid !important; page-break-inside:avoid !important; }
+  .thermal-receipt .thermal-logo { max-width:23mm !important; }
+}
