@@ -221,8 +221,8 @@ function PageHead({title,desc,action}) {return <div className="page-head"><div><
 function Notice({message}) {return message?<p className="error" role="alert">{message}</p>:null;}
 function Dashboard() {
   const [stats,setStats]=useState({sales:0,total:0,books:0,schools:0});const [recent,setRecent]=useState([]);const [err,setErr]=useState('');
-  useEffect(()=>{(async()=>{const [sales,books,schools,totals]=await Promise.all([supabase.from('sales').select('id,total,created_at',{count:'exact'}).order('created_at',{ascending:false}).limit(10),supabase.from('products').select('id',{count:'exact',head:true}).eq('is_active',true),supabase.from('schools').select('id',{count:'exact',head:true}),supabase.from('sales').select('total')]);setErr(getError(sales,books,schools,totals));setRecent(sales.data||[]);setStats({sales:sales.count||0,total:(totals.data||[]).reduce((a,x)=>a+Number(x.total),0),books:books.count||0,schools:schools.count||0});})();},[]);
-  return <><PageHead title="Overview" desc="Your business at a glance"/><Notice message={err}/><div className="stat-grid">{[['Total revenue',money(stats.total)],['Sales completed',stats.sales],['Book titles',stats.books],['Schools',stats.schools]].map(([a,b])=><div className="stat" key={a}><span>{a}</span><strong>{b}</strong></div>)}</div><section className="panel"><h2>Recent sales</h2><div className="table-wrap"><table><thead><tr><th>Sale ID</th><th>Date</th><th>Amount</th></tr></thead><tbody>{recent.map(x=><tr key={x.id}><td>{x.id.slice(0,8)}</td><td>{new Date(x.created_at).toLocaleString()}</td><td>{money(x.total)}</td></tr>)}</tbody></table>{!recent.length&&<p className="empty">No sales yet</p>}</div></section></>;
+  useEffect(()=>{(async()=>{const [sales,books,schools,totals]=await Promise.all([supabase.from('sales').select('id,receipt_no,total,created_at',{count:'exact'}).order('created_at',{ascending:false}).limit(10),supabase.from('products').select('id',{count:'exact',head:true}).eq('is_active',true),supabase.from('schools').select('id',{count:'exact',head:true}),supabase.from('sales').select('total')]);setErr(getError(sales,books,schools,totals));setRecent(sales.data||[]);setStats({sales:sales.count||0,total:(totals.data||[]).reduce((a,x)=>a+Number(x.total),0),books:books.count||0,schools:schools.count||0});})();},[]);
+  return <><PageHead title="Overview" desc="Your business at a glance"/><Notice message={err}/><div className="stat-grid">{[['Total revenue',money(stats.total)],['Sales completed',stats.sales],['Book titles',stats.books],['Schools',stats.schools]].map(([a,b])=><div className="stat" key={a}><span>{a}</span><strong>{b}</strong></div>)}</div><section className="panel"><h2>Recent sales</h2><div className="table-wrap"><table><thead><tr><th>Sale ID</th><th>Date</th><th>Amount</th></tr></thead><tbody>{recent.map(x=><tr key={x.id}><td>{displayReceipt(x.receipt_no)}</td><td>{new Date(x.created_at).toLocaleString()}</td><td>{money(x.total)}</td></tr>)}</tbody></table>{!recent.length&&<p className="empty">No sales yet</p>}</div></section></>;
 }
 
 function Schools() {
@@ -353,6 +353,42 @@ const receiptShopDetails = (name) => {
   if(n.includes('mehran'))return {name:'Indus Mehran Society',address:'Shop No. 2, C-97, Indus Mehran Society, Malir, Karachi'};
   return {name:name||'Shop not identified',address:'Please contact the shop for its address'};
 };
+const displayReceipt = value => value == null ? 'Pending' : `ABB-${String(value).padStart(6,'0')}`;
+
+// WhatsApp click-to-chat opens a prefilled TEXT receipt; the seller must press Send in WhatsApp.
+// The customer's number is used only in the URL and is not stored in the POS database.
+const whatsappRecipient = raw => {
+  const digits = String(raw||'').replace(/\D/g,'');
+  if (/^03\d{9}$/.test(digits)) return '92'+digits.slice(1);
+  if (/^923\d{9}$/.test(digits)) return digits;
+  if (/^00923\d{9}$/.test(digits)) return digits.slice(2);
+  return null;
+};
+const whatsappReceiptText = (sale,shop) => {
+  const total = Number(sale.total||0);
+  const lines = [
+    'ABBAS BOOK BANK by AF Notebook',
+    shop.name,
+    shop.address,
+    'Phone: '+RECEIPT_CONTACT.phone,
+    '',
+    'RECEIPT '+displayReceipt(sale.receipt_no),
+    'Date: '+sale.date,
+    '',
+    ...sale.items.map(x=>`${x.name} x ${x.qty} @ ${receiptMoney(x.price)} = ${receiptMoney(Number(x.price)*Number(x.qty))}`),
+    '',
+    'Grand Total: '+receiptMoney(total),
+    'Payment: '+(sale.method==='cash'?'Cash':sale.method==='card'?'Card':sale.method==='bank_transfer'?'Bank transfer':'Other')
+  ];
+  if(sale.method==='cash'){
+    const received=Number(sale.cashReceived??total);
+    lines.push('Cash Received: '+receiptMoney(received));
+    lines.push('Change: '+receiptMoney(Math.max(0,received-total)));
+  }
+  lines.push('',"Supporting your Child's Education");
+  return lines.join('\n');
+};
+
 const receiptMoney = value => 'Rs '+Number(value||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2});
 function ThermalReceipt({sale,shop}) {
   if(!sale)return null;
@@ -365,7 +401,7 @@ function ThermalReceipt({sale,shop}) {
     <div className="thermal-center thermal-by">By AF Notebook</div>
     <div className="thermal-center thermal-address">{shop.name}<br/>{shop.address}<br/>{RECEIPT_CONTACT.email}<br/>{RECEIPT_CONTACT.phone}</div>
     <div className="thermal-rule"/>
-    <div className="thermal-meta"><span>Receipt</span><strong>{String(sale.id)}</strong></div>
+    <div className="thermal-meta"><span>Receipt</span><strong>{displayReceipt(sale.receipt_no)}</strong></div>
     <div className="thermal-meta"><span>Date</span><span>{sale.date}</span></div>
     <div className="thermal-rule"/>
     <div className="thermal-meta"><span>P Mode</span><span>Items</span><span>Units</span><span>Amount</span></div>
@@ -376,7 +412,7 @@ function ThermalReceipt({sale,shop}) {
     <div className="thermal-meta"><span>Subtotal</span><span>{receiptMoney(sale.total)}</span></div>
     <div className="thermal-meta thermal-grand"><span>Grand Total</span><span>{receiptMoney(sale.total)}</span></div>
     {sale.method==='cash'&&<><div className="thermal-rule"/><div className="thermal-meta"><span>Cash Received</span><span>{receiptMoney(cashReceived)}</span></div><div className="thermal-meta"><span>Change Amount</span><span>{receiptMoney(Math.max(0,cashReceived-Number(sale.total)))}</span></div></>}
-    <div className="thermal-footer">Supporting your child's Education</div>
+    <div className="thermal-footer">Supporting your Child's Education</div>
   </div>;
 }
 
@@ -387,6 +423,8 @@ function POS({branchId}) {
   const [error,setError]=useState(''),[success,setSuccess]=useState(null),[busy,setBusy]=useState(false);
   const [method,setMethod]=useState('cash'),[cash,setCash]=useState(''),[requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
   const [cartOpen,setCartOpen]=useState(false),[shopName,setShopName]=useState('');
+  const [customerWhatsapp,setCustomerWhatsapp]=useState('');
+  const [whatsappError,setWhatsappError]=useState('');
   useEffect(()=>{
     let active=true;
     Promise.all([
@@ -446,11 +484,30 @@ function POS({branchId}) {
     try{
       const {data,error:checkoutError}=await supabase.rpc('pos_checkout',{p_items:cart.map(x=>({product_id:x.id,quantity:x.qty})),p_request_key:requestKey,p_method:method});
       if(checkoutError)throw checkoutError;
-      setSuccess({id:data.sale_id,total:Number(data.total),method,items:cart.map(x=>({...x})),date:new Date().toLocaleString('en-PK'),cashReceived:method==='cash'&&cash!==''?Number(cash):Number(data.total)});
+      const {data:receiptRow}=await supabase.from('sales').select('receipt_no').eq('id',data.sale_id).maybeSingle();
+      setSuccess({id:data.sale_id,receipt_no:receiptRow?.receipt_no,total:Number(data.total),method,items:cart.map(x=>({...x})),date:new Date().toLocaleString('en-PK'),cashReceived:method==='cash'&&cash!==''?Number(cash):Number(data.total)});
       setCart([]);setCash('');setRequestKey(crypto.randomUUID());setCartOpen(false);
+      setCustomerWhatsapp('');setWhatsappError('');
       if(stock!==null)setStock(prev=>{const next={...prev};for(const x of cart)next[x.id]=(next[x.id]??0)-x.qty;return next});
     }catch(e){setError(e.message||'Checkout failed. Please confirm sale status before retrying.')}
     finally{setBusy(false)}
+  }
+  function sendWhatsAppReceipt(){
+    if(!success)return;
+    const phone=whatsappRecipient(customerWhatsapp);
+    if(!phone){
+      setWhatsappError('Enter a valid Pakistani WhatsApp number, e.g. 03130871512.');
+      return;
+    }
+    if(success.receipt_no == null){
+      setWhatsappError('Receipt number is not available yet. Please retry after the sale is saved.');
+      return;
+    }
+    setWhatsappError('');
+    const message=whatsappReceiptText(success,receiptShopDetails(shopName));
+    const url='https://wa.me/'+phone+'?text='+encodeURIComponent(message);
+    // Open only in direct response to the seller's click, not automatically after checkout.
+    window.open(url,'_blank','noopener,noreferrer');
   }
   function printReceipt(){
     if(!success)return;
@@ -464,7 +521,15 @@ function POS({branchId}) {
   return <div className="retail-pos">
     <div className="retail-header"><div><span className="retail-eyebrow">SELLER COUNTER</span><h1>New sale</h1><p>Find a course, book or stationery item in seconds.</p></div><div className="retail-header-actions"><button className="retail-outline" onClick={()=>{if(!cart.length)return;setHeld(cart);changeCart([]);setCartOpen(false)}} disabled={!cart.length}>Hold bill</button><button className="retail-outline" onClick={()=>{if(!held)return;changeCart(held);setHeld(null);setCartOpen(true)}} disabled={!held}>Resume{held?` (${held.length})`:''}</button></div></div>
     {error&&<p className="error" role="alert">{error}</p>}
-    {success&&<section className="retail-receipt panel"><div><strong>✓ Sale completed</strong><p>Receipt #{success.id} · {money(success.total)}</p><small>{success.date}</small></div><button className="retail-outline" onClick={printReceipt}>Print receipt</button><div className="retail-print-only"><ThermalReceipt sale={success} shop={receiptShopDetails(shopName)}/></div></section>}
+    {success&&<section className="retail-receipt panel"><div><strong>✓ Sale completed</strong><p>Receipt #{displayReceipt(success.receipt_no)} · {money(success.total)}</p><small>{success.date}</small></div><div className="receipt-action-tools" style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center'}}>
+      <button type="button" className="retail-outline" onClick={printReceipt}>Print receipt</button>
+      <label style={{display:'flex',flexDirection:'column',gap:4,fontSize:13}}>
+        Customer WhatsApp number
+        <input type="tel" inputMode="tel" autoComplete="tel" placeholder="03130871512" aria-label="Customer WhatsApp number" value={customerWhatsapp} onChange={e=>{setCustomerWhatsapp(e.target.value);setWhatsappError('')}} style={{padding:'9px 11px',border:'1px solid #cbd5e1',borderRadius:8,minWidth:180,maxWidth:240}}/>
+      </label>
+      <button type="button" className="retail-outline" onClick={sendWhatsAppReceipt}>Send receipt via WhatsApp</button>
+      {whatsappError&&<span role="alert" style={{color:'#b91c1c',fontSize:13}}>{whatsappError}</span>}
+      </div><div className="retail-print-only"><ThermalReceipt sale={success} shop={receiptShopDetails(shopName)}/></div></section>}
     <div className="retail-layout"><main className="retail-browse">
       <label className="retail-search"><Search size={20}/><input value={query} onChange={e=>{setQuery(e.target.value);if(e.target.value&&view==='home')setView('quick')}} placeholder="Search book, stationery or scan barcode" aria-label="Search products or scan barcode"/></label>
       {view==='home'?<><div className="retail-section-title"><h2>What are you selling?</h2><span>Choose a category</span></div><div className="retail-categories">{categories.map(c=><button type="button" key={c.id} className={'retail-category '+c.tone} onClick={()=>navigate(c.id)}><span className="retail-category-icon">{c.icon}</span><strong>{c.title}</strong><small>{c.detail}</small><span className="retail-category-arrow">Explore →</span></button>)}</div><div className="retail-section-title"><h2>Quick add</h2><span>Available products</span></div><div className="retail-product-grid">{products.slice(0,8).map(listCard)}</div></>:
@@ -485,7 +550,7 @@ function POS({branchId}) {
 
 function SalesHistory({admin=false}) {
   const [sales,setSales]=useState([]),[err,setErr]=useState('');
-  useEffect(()=>{supabase.from('sales').select('id,total,created_at').order('created_at',{ascending:false}).limit(100).then(({data,error})=>{setSales(data||[]);setErr(error?.message||'');});},[]);
-  return <><PageHead title={admin?'All sales':'My sales'} desc="Recent completed transactions"/><Notice message={err}/><section className="panel"><div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Amount</th></tr></thead><tbody>{sales.map(s=><tr key={s.id}><td>{s.id.slice(0,8)}</td><td>{new Date(s.created_at).toLocaleString()}</td><td>{money(s.total)}</td></tr>)}</tbody></table></div>{!sales.length&&<p className="empty">No sales recorded</p>}</section></>;
+  useEffect(()=>{supabase.from('sales').select('id,receipt_no,total,created_at').order('created_at',{ascending:false}).limit(100).then(({data,error})=>{setSales(data||[]);setErr(error?.message||'');});},[]);
+  return <><PageHead title={admin?'All sales':'My sales'} desc="Recent completed transactions"/><Notice message={err}/><section className="panel"><div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Amount</th></tr></thead><tbody>{sales.map(s=><tr key={s.id}><td>{displayReceipt(s.receipt_no)}</td><td>{new Date(s.created_at).toLocaleString()}</td><td>{money(s.total)}</td></tr>)}</tbody></table></div>{!sales.length&&<p className="empty">No sales recorded</p>}</section></>;
 }
 export default App;
