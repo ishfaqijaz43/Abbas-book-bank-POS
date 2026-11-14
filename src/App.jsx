@@ -345,13 +345,47 @@ function Products({admin=false}) {
   </div>;
 }
 
+const RECEIPT_CONTACT = Object.freeze({email:'a.fnotebooks12@gmail.com',phone:'03142225364'});
+const receiptShopDetails = (name) => {
+  const n=(name||'').toLowerCase();
+  if(n.includes('jaffer') || n.includes('jafar') || n.includes('tayyar'))return {name:'Jaffer Tayyar',address:'Shop # A-116, Survey No. 640, Aun o Mohammad Chowk, Jaffer Tayyar, Malir, Karachi'};
+  if(n.includes('mehran'))return {name:'Indus Mehran Society',address:'Shop No. 2, C-97, Indus Mehran Society, Malir, Karachi'};
+  return {name:name||'Shop not identified',address:'Please contact the shop for its address'};
+};
+const receiptMoney = value => 'Rs '+Number(value||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2});
+function ThermalReceipt({sale,shop}) {
+  if(!sale)return null;
+  const itemCount=sale.items.reduce((n,x)=>n+Number(x.qty),0);
+  const cashReceived=sale.method==='cash' ? Number(sale.cashReceived) : null;
+  return <div className="thermal-receipt" aria-label="58mm invoice">
+    <div className="thermal-center thermal-heading">INVOICE</div>
+    <img className="thermal-logo" src="/branding/af-notebook.jpg" alt="AF Notebook"/>
+    <div className="thermal-center thermal-business">ABBAS BOOK BANK</div>
+    <div className="thermal-center thermal-by">By AF Notebook</div>
+    <div className="thermal-center thermal-address">{shop.name}<br/>{shop.address}<br/>{RECEIPT_CONTACT.email}<br/>{RECEIPT_CONTACT.phone}</div>
+    <div className="thermal-rule"/>
+    <div className="thermal-meta"><span>Receipt</span><strong>{String(sale.id)}</strong></div>
+    <div className="thermal-meta"><span>Date</span><span>{sale.date}</span></div>
+    <div className="thermal-rule"/>
+    <div className="thermal-meta"><span>P Mode</span><span>Items</span><span>Units</span><span>Amount</span></div>
+    <div className="thermal-meta"><span>{sale.method==='cash'?'Cash':sale.method==='bank_transfer'?'Bank':sale.method==='card'?'Card':'Other'}</span><span>{sale.items.length}</span><span>{itemCount}</span><span>{receiptMoney(sale.total)}</span></div>
+    <div className="thermal-rule"/>
+    <table className="thermal-items"><thead><tr><th>Name</th><th>Price</th><th>Qty</th><th>Total</th></tr></thead><tbody>{sale.items.map((x,i)=><tr key={x.id||i}><td>{x.name}</td><td>{receiptMoney(x.price)}</td><td>{x.qty}</td><td>{receiptMoney(Number(x.price)*x.qty)}</td></tr>)}</tbody></table>
+    <div className="thermal-rule"/>
+    <div className="thermal-meta"><span>Subtotal</span><span>{receiptMoney(sale.total)}</span></div>
+    <div className="thermal-meta thermal-grand"><span>Grand Total</span><span>{receiptMoney(sale.total)}</span></div>
+    {sale.method==='cash'&&<><div className="thermal-rule"/><div className="thermal-meta"><span>Cash Received</span><span>{receiptMoney(cashReceived)}</span></div><div className="thermal-meta"><span>Change Amount</span><span>{receiptMoney(Math.max(0,cashReceived-Number(sale.total)))}</span></div></>}
+    <div className="thermal-footer">Supporting your child's Education</div>
+  </div>;
+}
+
 function POS({branchId}) {
   const [products,setProducts]=useState([]),[schools,setSchools]=useState([]),[grades,setGrades]=useState([]),[links,setLinks]=useState([]);
   const [stock,setStock]=useState(null),[view,setView]=useState('home'),[school,setSchool]=useState(''),[grade,setGrade]=useState('');
   const [query,setQuery]=useState(''),[cart,setCart]=useState([]),[held,setHeld]=useState(null);
   const [error,setError]=useState(''),[success,setSuccess]=useState(null),[busy,setBusy]=useState(false);
   const [method,setMethod]=useState('cash'),[cash,setCash]=useState(''),[requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
-  const [cartOpen,setCartOpen]=useState(false);
+  const [cartOpen,setCartOpen]=useState(false),[shopName,setShopName]=useState('');
   useEffect(()=>{
     let active=true;
     Promise.all([
@@ -359,10 +393,11 @@ function POS({branchId}) {
       supabase.from('schools').select('id,name').order('name'),
       supabase.from('grades').select('id,name,school_id').order('name'),
       supabase.from('grade_books').select('grade_id,product_id,quantity'),
-      supabase.from('stock').select('product_id,quantity').eq('branch_id',branchId)
-    ]).then(([p,s,g,l,st])=>{
+      supabase.from('stock').select('product_id,quantity').eq('branch_id',branchId),
+      supabase.from('branches').select('name').eq('id',branchId).single()
+    ]).then(([p,s,g,l,st,br])=>{
       if(!active)return;
-      setProducts(p.data||[]);setSchools(s.data||[]);setGrades(g.data||[]);setLinks(l.data||[]);
+      setProducts(p.data||[]);setSchools(s.data||[]);setGrades(g.data||[]);setLinks(l.data||[]);setShopName(br.data?.name||'');
       if(!st.error)setStock(Object.fromEntries((st.data||[]).map(x=>[x.product_id,Number(x.quantity)])));
       setError(getError(p,s,g,l));
     }).catch(e=>{if(active)setError(e.message)});
@@ -410,7 +445,7 @@ function POS({branchId}) {
     try{
       const {data,error:checkoutError}=await supabase.rpc('pos_checkout',{p_items:cart.map(x=>({product_id:x.id,quantity:x.qty})),p_request_key:requestKey,p_method:method});
       if(checkoutError)throw checkoutError;
-      setSuccess({id:data.sale_id,total:Number(data.total),method,items:cart.map(x=>({...x})),date:new Date().toLocaleString('en-PK')});
+      setSuccess({id:data.sale_id,total:Number(data.total),method,items:cart.map(x=>({...x})),date:new Date().toLocaleString('en-PK'),cashReceived:method==='cash'&&cash!==''?Number(cash):Number(data.total)});
       setCart([]);setCash('');setRequestKey(crypto.randomUUID());setCartOpen(false);
       if(stock!==null)setStock(prev=>{const next={...prev};for(const x of cart)next[x.id]=(next[x.id]??0)-x.qty;return next});
     }catch(e){setError(e.message||'Checkout failed. Please confirm sale status before retrying.')}
@@ -428,7 +463,7 @@ function POS({branchId}) {
   return <div className="retail-pos">
     <div className="retail-header"><div><span className="retail-eyebrow">SELLER COUNTER</span><h1>New sale</h1><p>Find a course, book or stationery item in seconds.</p></div><div className="retail-header-actions"><button className="retail-outline" onClick={()=>{if(!cart.length)return;setHeld(cart);changeCart([]);setCartOpen(false)}} disabled={!cart.length}>Hold bill</button><button className="retail-outline" onClick={()=>{if(!held)return;changeCart(held);setHeld(null);setCartOpen(true)}} disabled={!held}>Resume{held?` (${held.length})`:''}</button></div></div>
     {error&&<p className="error" role="alert">{error}</p>}
-    {success&&<section className="retail-receipt panel"><div><strong>✓ Sale completed</strong><p>Receipt #{success.id} · {money(success.total)}</p><small>{success.date}</small></div><button className="retail-outline" onClick={printReceipt}>Print receipt</button><div className="retail-print-only"><h2>Abbas Book Bank by AF Notebook</h2><p>Receipt: {success.id}</p>{success.items.map(x=><p key={x.id}>{x.name} × {x.qty} — {money(x.price*x.qty)}</p>)}<strong>Total: {money(success.total)}</strong></div></section>}
+    {success&&<section className="retail-receipt panel"><div><strong>✓ Sale completed</strong><p>Receipt #{success.id} · {money(success.total)}</p><small>{success.date}</small></div><button className="retail-outline" onClick={printReceipt}>Print receipt</button><div className="retail-print-only"><ThermalReceipt sale={success} shop={receiptShopDetails(shopName)}/></div></section>}
     <div className="retail-layout"><main className="retail-browse">
       <label className="retail-search"><Search size={20}/><input value={query} onChange={e=>{setQuery(e.target.value);if(e.target.value&&view==='home')setView('quick')}} placeholder="Search book, stationery or scan barcode" aria-label="Search products or scan barcode"/></label>
       {view==='home'?<><div className="retail-section-title"><h2>What are you selling?</h2><span>Choose a category</span></div><div className="retail-categories">{categories.map(c=><button type="button" key={c.id} className={'retail-category '+c.tone} onClick={()=>navigate(c.id)}><span className="retail-category-icon">{c.icon}</span><strong>{c.title}</strong><small>{c.detail}</small><span className="retail-category-arrow">Explore →</span></button>)}</div><div className="retail-section-title"><h2>Quick add</h2><span>Available products</span></div><div className="retail-product-grid">{products.slice(0,8).map(listCard)}</div></>:
