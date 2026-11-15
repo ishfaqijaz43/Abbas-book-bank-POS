@@ -220,9 +220,39 @@ function Shell({role,branchId,logout}) {
 function PageHead({title,desc,action}) {return <div className="page-head"><div><h1>{title}</h1><p className="muted">{desc}</p></div>{action}</div>;}
 function Notice({message}) {return message?<p className="error" role="alert">{message}</p>:null;}
 function Dashboard() {
-  const [stats,setStats]=useState({sales:0,total:0,books:0,schools:0});const [recent,setRecent]=useState([]);const [err,setErr]=useState('');
-  useEffect(()=>{(async()=>{const [sales,books,schools,totals]=await Promise.all([supabase.from('sales').select('id,receipt_no,total,created_at',{count:'exact'}).order('created_at',{ascending:false}).limit(10),supabase.from('products').select('id',{count:'exact',head:true}).eq('is_active',true),supabase.from('schools').select('id',{count:'exact',head:true}),supabase.from('sales').select('total')]);setErr(getError(sales,books,schools,totals));setRecent(sales.data||[]);setStats({sales:sales.count||0,total:(totals.data||[]).reduce((a,x)=>a+Number(x.total),0),books:books.count||0,schools:schools.count||0});})();},[]);
-  return <><PageHead title="Overview" desc="Your business at a glance"/><Notice message={err}/><div className="stat-grid">{[['Total revenue',money(stats.total)],['Sales completed',stats.sales],['Book titles',stats.books],['Schools',stats.schools]].map(([a,b])=><div className="stat" key={a}><span>{a}</span><strong>{b}</strong></div>)}</div><section className="panel"><h2>Recent sales</h2><div className="table-wrap"><table><thead><tr><th>Sale ID</th><th>Date</th><th>Amount</th></tr></thead><tbody>{recent.map(x=><tr key={x.id}><td>{displayReceipt(x.receipt_no)}</td><td>{new Date(x.created_at).toLocaleString()}</td><td>{money(x.total)}</td></tr>)}</tbody></table>{!recent.length&&<p className="empty">No sales yet</p>}</div></section></>;
+  const [data,setData]=useState(null),[recent,setRecent]=useState([]),[err,setErr]=useState(''),[loading,setLoading]=useState(true);
+  const refresh=useCallback(async()=>{
+    setLoading(true);setErr('');
+    try {
+      const [financial,sales]=await Promise.all([
+        supabase.rpc('pos_financial_overview'),
+        supabase.from('sales').select('id,receipt_no,total,created_at').order('created_at',{ascending:false}).limit(8)
+      ]);
+      if(financial.error)throw financial.error;
+      if(sales.error)throw sales.error;
+      setData(financial.data);setRecent(sales.data||[]);
+    }catch(e){setErr(e.message||String(e));}finally{setLoading(false);}
+  },[]);
+  useEffect(()=>{refresh();},[refresh]);
+  const d=data||{};const uncosted=Number(d.uncosted_stock_units||0),unknownSold=Number(d.uncosted_sold_units||0);
+  const metrics=[
+    ['Listed products',d.listed_products??'—','Active catalog items','catalog'],
+    ['Stock units',d.stock_units??'—','Across all shops','stock'],
+    ['Stock cost value',uncosted?'Incomplete':money(d.stock_cost_value||0),uncosted?`${uncosted} units missing costs`:'Recorded inventory cost','cost'],
+    ['Stock selling value',money(d.stock_selling_value||0),'At current listed prices','selling'],
+    ['Net sales',money(d.net_sales||0),'After completed refunds','sales'],
+    ['Gross profit',unknownSold?'Incomplete':money(d.realized_gross_profit||0),unknownSold?`${unknownSold} sold units missing historical costs`:'Sales less recorded item costs','profit'],
+    ['Potential stock margin',uncosted?'Incomplete':money(d.potential_margin||0),uncosted?'Enter missing purchase costs':'Before overhead and expenses','margin'],
+    ['Completed sales',d.sales_count??'—','All recorded transactions','orders']
+  ];
+  return <div className="premium-dashboard">
+    <div className="premium-hero"><div><span className="premium-eyebrow">ABBAS BOOK BANK · ADMIN OVERVIEW</span><h1>Business at a glance</h1><p>Inventory, sales and financial performance in one place.</p></div><button className="premium-refresh" onClick={refresh} disabled={loading}>{loading?'Refreshing…':'Refresh overview'}</button></div>
+    <Notice message={err}/>
+    {data&&<>{(uncosted>0||unknownSold>0)&&<div className="premium-warning" role="status"><strong>Financial data needs attention</strong><span>{uncosted>0?`${uncosted} stock units have no purchase cost. `:''}{unknownSold>0?`${unknownSold} historical sold units have no cost snapshot. `:''}Unknown costs are never treated as zero profit. Historical sales cannot be repaired by entering today's cost.</span></div>}
+    <div className="premium-metrics">{metrics.map(([label,value,detail,key])=><div className={'premium-metric premium-'+key} key={key}><span className="premium-metric-label">{label}</span><strong>{value}</strong><small>{detail}</small></div>)}</div>
+    <div className="premium-bottom"><section className="premium-recent"><div className="premium-panel-head"><div><h2>Recent sales</h2><p>Latest completed transactions</p></div><span className="premium-count">{recent.length} shown</span></div><div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Amount</th></tr></thead><tbody>{recent.map(x=><tr key={x.id}><td>{displayReceipt(x.receipt_no)}</td><td>{new Date(x.created_at).toLocaleString()}</td><td>{money(x.total)}</td></tr>)}</tbody></table>{!recent.length&&<p className="empty">No sales yet</p>}</div></section><section className="premium-insight"><h2>Inventory health</h2><p>Track what your inventory is worth and where data is incomplete.</p><div><span>Costed stock units</span><strong>{d.costed_stock_units??0}</strong></div><div><span>Uncosted stock units</span><strong>{uncosted}</strong></div><div><span>Refunds</span><strong>{money(d.refunds||0)}</strong></div><div><span>Schools</span><strong>{d.schools_count??0}</strong></div><p className="premium-note">Gross profit excludes overhead, rent, salaries and other operating expenses. Cost values reflect recorded purchase costs, not verified historical purchase lots.</p></section></div></>}
+    {loading&&!data&&<section className="panel">Loading financial overview…</section>}
+  </div>;
 }
 
 function Schools() {
@@ -238,7 +268,7 @@ function Schools() {
     ]);
     setSchools(s.data||[]);setGrades(g.data||[]);setBooks(b.data||[]);setProducts(p.data||[]);
     const err=getError(s,g,b,p);if(err)throw Error(err);
-  },[]);
+  },[admin]);
   useEffect(()=>{load().catch(e=>setError(e.message));},[load]);
   async function mutate(action,confirmation){
     if(confirmation&&!window.confirm(confirmation))return false;
@@ -270,7 +300,7 @@ const PRODUCT_CATEGORIES=['Books & textbooks','School courses','Pens & pencils',
 
 function Products({admin=false}) {
   const [products,setProducts]=useState([]),[shops,setShops]=useState([]),[stock,setStock]=useState([]);
-  const [name,setName]=useState(''),[sku,setSku]=useState(''),[price,setPrice]=useState(''),[category,setCategory]=useState('Books & textbooks');
+  const [name,setName]=useState(''),[sku,setSku]=useState(''),[price,setPrice]=useState(''),[purchaseCost,setPurchaseCost]=useState(''),[costs,setCosts]=useState({}),[category,setCategory]=useState('Books & textbooks');
   const [opening,setOpening]=useState({}),[branch,setBranch]=useState(''),[quantities,setQuantities]=useState({}),[reason,setReason]=useState('');
   const [categoryFilter,setCategoryFilter]=useState('All categories'),[showArchived,setShowArchived]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[success,setSuccess]=useState('');
   const load=useCallback(async()=>{
@@ -281,6 +311,7 @@ function Products({admin=false}) {
     ]);
     const err=getError(p,b,s);if(err)throw Error(err);
     setProducts(p.data||[]);setShops(b.data||[]);setStock(s.data||[]);
+    if(admin){const c=await supabase.from('product_costs').select('product_id,purchase_cost');if(c.error)throw c.error;setCosts(Object.fromEntries((c.data||[]).map(x=>[x.product_id,x.purchase_cost])));}
     setBranch(v=>b.data?.some(x=>x.id===v)?v:(b.data?.[0]?.id||''));
   },[]);
   useEffect(()=>{load().catch(e=>setError(e.message));},[load]);
@@ -294,12 +325,15 @@ function Products({admin=false}) {
   async function add(e){
     e.preventDefault();if(busy)return;
     const n=name.trim(),p=Number(price);
+    const costInput=purchaseCost.trim();const c=Number(costInput);if(costInput!==''&&(!Number.isFinite(c)||c<0)){setError('Enter a valid purchase cost or leave it blank.');return;}
     if(!n||price===''||!Number.isFinite(p)||p<0){setError('Enter a valid book name and price.');return;}
     for(const shop of shops){const raw=opening[shop.id]??'0';const value=Number(raw);if(raw===''||!Number.isSafeInteger(value)||value<0){setError('Enter a valid whole-number quantity for '+shop.name);return;}}
     setBusy(true);setError('');setSuccess('');
     try{
       const {data:created,error:insertError}=await supabase.from('products').insert({name:n,sku:sku.trim()||null,price:p,category}).select('id').single();
       if(insertError)throw insertError;
+      let costSaveError='';
+      if(costInput!==''){const r=await supabase.from('product_costs').upsert({product_id:created.id,purchase_cost:c},{onConflict:'product_id'});if(r.error)costSaveError=r.error.message;}
       // Stock is saved through the audited admin-only RPC, never by direct table writes.
       // Separate RPCs are not one transaction: if one fails, keep the book and report partial progress.
       const failed=[];
@@ -308,13 +342,21 @@ function Products({admin=false}) {
         const {error:stockError}=await supabase.rpc('admin_set_stock_quantity',{p_branch_id:shop.id,p_product_id:created.id,p_quantity:value,p_reason:'Opening stock'});
         if(stockError)failed.push(`${shop.name}: ${stockError.message}`);
       }
-      setName('');setSku('');setPrice('');setCategory('Books & textbooks');setOpening({});
+      setName('');setSku('');setPrice('');setPurchaseCost('');setCategory('Books & textbooks');setOpening({});
       try{await load();}catch(loadError){setError('Book created, but refresh failed: '+loadError.message);return;}
-      if(failed.length)setError('Book was created, but some opening stock did not save. Do not add the book again. Use Manage stock to correct it. '+failed.join(' | '));
+      if(costSaveError)setError('Product created but purchase cost was not saved: '+costSaveError+'. Edit its purchase cost below.');
+      else if(failed.length)setError('Book was created, but some opening stock did not save. Do not add the book again. Use Manage stock to correct it. '+failed.join(' | '));
       else setSuccess('Book created and opening stock saved for each shop.');
     }catch(err){setError(err.message);}finally{setBusy(false);}
   }
   async function edit(p){const newCategory=window.prompt('Category: '+PRODUCT_CATEGORIES.join(', '),p.category||'Books & textbooks');if(newCategory===null)return;if(!PRODUCT_CATEGORIES.includes(newCategory.trim())){setError('Choose a category from the listed options.');return;}const n=window.prompt('Book name',p.name);if(n===null)return;const s=window.prompt('SKU / barcode (blank allowed)',p.sku||'');if(s===null)return;const input=window.prompt('Price in PKR',String(p.price));if(input===null)return;const value=Number(input);if(!n.trim()||!input.trim()||!Number.isFinite(value)||value<0){setError('Invalid name or price.');return;}await mutate(()=>supabase.from('products').update({name:n.trim(),sku:s.trim()||null,price:value,category:newCategory.trim()}).eq('id',p.id));}
+  async function saveCost(p){
+    const answer=window.prompt('Purchase cost in PKR for '+p.name+' (not selling price)',costs[p.id]===undefined?'':String(costs[p.id]));
+    if(answer===null)return;
+    if(!answer.trim()){setError('Purchase cost is required. Cancel to keep it unknown.');return;}
+    const value=Number(answer);if(!Number.isFinite(value)||value<0){setError('Purchase cost must be a nonnegative number.');return;}
+    await mutate(()=>supabase.from('product_costs').upsert({product_id:p.id,purchase_cost:value},{onConflict:'product_id'}));
+  }
   async function saveStock(p){
     if(!branch){setError('Choose a shop.');return;}
     const key=`${branch}:${p.id}`,raw=quantities[key]??String(qty(p.id,branch)),value=Number(raw);
@@ -329,7 +371,7 @@ function Products({admin=false}) {
         <div className="abb-field"><label>Product name</label><input required placeholder="e.g. English Grade 5" value={name} onChange={e=>setName(e.target.value)}/></div>
         <div className="abb-field"><label>Category</label><select value={category} onChange={e=>setCategory(e.target.value)}>{PRODUCT_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></div><div className="abb-field"><label>Barcode / SKU</label><input placeholder="Optional" value={sku} onChange={e=>setSku(e.target.value)}/></div>
         <div className="abb-field"><label>Price (PKR)</label><input required type="number" min="0" step="0.01" placeholder="0.00" value={price} onChange={e=>setPrice(e.target.value)}/></div>
-        <div className="abb-opening"><strong>Opening stock by shop</strong><div className="abb-opening-grid">{shops.map(shop=><div className="abb-field" key={shop.id}><label htmlFor={'opening-'+shop.id}>{shop.name}</label><input id={'opening-'+shop.id} type="number" min="0" step="1" inputMode="numeric" value={opening[shop.id]??'0'} onChange={e=>setOpening(v=>({...v,[shop.id]:e.target.value}))}/></div>)}</div><p className="abb-hint">Enter actual physical copies. Zero means no stock at that shop.</p></div>
+        <div className="abb-field"><label>Purchase cost (PKR)</label><input type="number" min="0" step="0.01" placeholder="Unknown, enter later" value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)}/></div><div className="abb-opening"><strong>Opening stock by shop</strong><div className="abb-opening-grid">{shops.map(shop=><div className="abb-field" key={shop.id}><label htmlFor={'opening-'+shop.id}>{shop.name}</label><input id={'opening-'+shop.id} type="number" min="0" step="1" inputMode="numeric" value={opening[shop.id]??'0'} onChange={e=>setOpening(v=>({...v,[shop.id]:e.target.value}))}/></div>)}</div><p className="abb-hint">Enter actual physical copies. Zero means no stock at that shop.</p></div>
         <button className="primary abb-btn abb-add-submit" disabled={busy||!shops.length}><Plus size={17}/>{busy?'Saving…':'Add product & opening stock'}</button>
       </form></section>}
     {admin&&<section className="panel abb-panel"><div className="abb-section-title"><h2>Manage stock</h2><span className="abb-hint">Changes are recorded in inventory history</span></div>
@@ -340,7 +382,7 @@ function Products({admin=false}) {
       <div className="abb-field" style={{maxWidth:320,marginBottom:16}}><label>Filter products by category</label><select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option>All categories</option>{PRODUCT_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div><div className="abb-books">{visible.map(p=><article className="abb-book" key={p.id}>
         <div className="abb-book-top"><div className="abb-book-name"><span className="abb-book-icon"><BookOpen size={20}/></span><div><h3>{p.name}</h3><span className="abb-hint">{p.category||'Books & textbooks'} · SKU: {p.sku||'Not set'}{!p.is_active?' · Archived':''}</span></div></div><strong className="abb-price">{money(p.price)}</strong></div>
         <div className="abb-shop-grid">{shops.map(shop=><div key={shop.id} className={'abb-shop-qty '+(shop.id===branch&&admin?'abb-shop-selected':'')}><span>{shop.name}</span><strong>{qty(p.id,shop.id)} <small>copies</small></strong></div>)}</div>
-        {admin&&<div className="abb-book-footer"><div className="abb-stock-edit"><div className="abb-field"><label>Copies at selected shop</label><input aria-label={'Copies for '+p.name} type="number" inputMode="numeric" min="0" step="1" value={quantities[`${branch}:${p.id}`]??String(qty(p.id,branch))} onChange={e=>setQuantities(v=>({...v,[`${branch}:${p.id}`]:e.target.value}))}/></div><button className="primary abb-btn" disabled={busy||!branch} onClick={()=>saveStock(p)}>Save stock</button></div><div className="abb-actions abb-book-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>edit(p)}>Edit product</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('products').update({is_active:!p.is_active}).eq('id',p.id),p.is_active?'Archive this book? Sales history will remain.':'Restore this book?')}>{p.is_active?'Archive':'Restore'}</button></div></div>}
+        {admin&&<div className="abb-book-footer"><div className="abb-cost-row"><span>Purchase cost: <strong>{costs[p.id]===undefined?'Not recorded':money(costs[p.id])}</strong></span><button className="secondary abb-btn" disabled={busy} onClick={()=>saveCost(p)}>{costs[p.id]===undefined?'Add purchase cost':'Edit purchase cost'}</button></div><div className="abb-stock-edit"><div className="abb-field"><label>Copies at selected shop</label><input aria-label={'Copies for '+p.name} type="number" inputMode="numeric" min="0" step="1" value={quantities[`${branch}:${p.id}`]??String(qty(p.id,branch))} onChange={e=>setQuantities(v=>({...v,[`${branch}:${p.id}`]:e.target.value}))}/></div><button className="primary abb-btn" disabled={busy||!branch} onClick={()=>saveStock(p)}>Save stock</button></div><div className="abb-actions abb-book-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>edit(p)}>Edit product</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('products').update({is_active:!p.is_active}).eq('id',p.id),p.is_active?'Archive this book? Sales history will remain.':'Restore this book?')}>{p.is_active?'Archive':'Restore'}</button></div></div>}
       </article>)}</div>{!visible.length&&<p className="empty">No books to display.</p>}
     </section>
   </div>;
