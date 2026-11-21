@@ -298,17 +298,20 @@ class AdminPageBoundary extends React.Component {
 function Schools() {
   const [schools,setSchools]=useState([]),[grades,setGrades]=useState([]),[books,setBooks]=useState([]),[products,setProducts]=useState([]);
   const [schoolName,setSchoolName]=useState(''),[newGrade,setNewGrade]=useState({}),[assignment,setAssignment]=useState({});
+  const [shops,setShops]=useState([]),[schoolShops,setSchoolShops]=useState([]),[newSchoolShops,setNewSchoolShops]=useState([]);
   const [error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
   const [schoolQuery,setSchoolQuery]=useState(''),[schoolPage,setSchoolPage]=useState(0);
   const load=useCallback(async()=>{
-    const [s,g,b,p]=await Promise.all([
+    const [s,g,b,p,sh,ss]=await Promise.all([
       supabase.from('schools').select('id,name').order('name'),
       supabase.from('grades').select('id,name,school_id').order('name'),
       supabase.from('grade_books').select('id,grade_id,product_id,quantity,products(name)'),
-      supabase.from('products').select('id,name').eq('is_active',true).order('name')
+      supabase.from('products').select('id,name').eq('is_active',true).order('name'),
+      supabase.from('branches').select('id,name').order('name'),
+      supabase.from('school_branches').select('school_id,branch_id')
     ]);
-    setSchools(s.data||[]);setGrades(g.data||[]);setBooks(b.data||[]);setProducts(p.data||[]);
-    const err=getError(s,g,b,p);if(err)throw Error(err);
+    setSchools(s.data||[]);setGrades(g.data||[]);setBooks(b.data||[]);setProducts(p.data||[]);setShops(sh.data||[]);setSchoolShops(ss.data||[]);
+    const err=getError(s,g,b,p,sh,ss);if(err)throw Error(err);
   },[]);
   useEffect(()=>{load().catch(e=>setError(e.message));},[load]);
   async function mutate(action,confirmation){
@@ -317,18 +320,19 @@ function Schools() {
     try{const {error}=await action();if(error)throw error;await load();setMessage('Changes saved.');return true;}
     catch(e){setError(e.message);return false;}finally{setBusy(false);}
   }
-  async function addSchool(e){e.preventDefault();const name=schoolName.trim();if(!name)return;if(await mutate(()=>supabase.from('schools').insert({name})))setSchoolName('');}
+  async function addSchool(e){e.preventDefault();const name=schoolName.trim();if(!name)return;if(!newSchoolShops.length){setError('Select at least one shop.');return;}if(await mutate(()=>supabase.rpc('pos_create_school_for_shops',{p_name:name,p_branch_ids:newSchoolShops}))) {setSchoolName('');setNewSchoolShops([]);}}
+  async function toggleSchoolShop(schoolId,branchId,enabled){await mutate(()=>supabase.rpc('pos_set_school_shop',{p_school_id:schoolId,p_branch_id:branchId,p_assigned:enabled}));}
   async function rename(table,id,oldName){const value=window.prompt('Enter new name',oldName);if(value===null||!value.trim()||value.trim()===oldName)return;await mutate(()=>supabase.from(table).update({name:value.trim()}).eq('id',id));}
   async function addGrade(e,schoolId){e.preventDefault();const name=(newGrade[schoolId]||'').trim();if(!name)return;if(await mutate(()=>supabase.from('grades').insert({school_id:schoolId,name})))setNewGrade(v=>({...v,[schoolId]:''}));}
   async function assign(e,gradeId){e.preventDefault();const a=assignment[gradeId]||{};const quantity=Number(a.quantity||1);if(!a.product_id||!Number.isSafeInteger(quantity)||quantity<1){setError('Choose a book and a valid quantity.');return;}await mutate(()=>supabase.from('grade_books').upsert({grade_id:gradeId,product_id:a.product_id,quantity},{onConflict:'grade_id,product_id'}));}
   async function editAssignment(row){const answer=window.prompt('Copies required for this grade',String(row.quantity));if(answer===null)return;const quantity=Number(answer);if(!Number.isSafeInteger(quantity)||quantity<1){setError('Quantity must be a positive whole number.');return;}await mutate(()=>supabase.from('grade_books').update({quantity}).eq('id',row.id));}
   return <div className="abb-page"><PageHead title="Schools & grades" desc="Manage schools, classes and required books"/><Notice message={error}/>{message&&<p className="success">{message}</p>}
     <section className="panel abb-panel"><div className="abb-section-title"><h2>Add a school</h2><span className="abb-hint">Create a school before adding its grades</span></div>
-      <form className="abb-form-line" onSubmit={addSchool}><input required placeholder="School name" value={schoolName} onChange={e=>setSchoolName(e.target.value)}/><button className="primary abb-btn" disabled={busy}><Plus size={16}/>Add school</button></form></section>
+      <form className="abb-form-line" onSubmit={addSchool}><input required placeholder="School name" value={schoolName} onChange={e=>setSchoolName(e.target.value)}/><fieldset className="abb-shop-picker"><legend>Assign to shop(s)</legend>{shops.map(sh=><label key={sh.id}><input type="checkbox" checked={newSchoolShops.includes(sh.id)} onChange={e=>setNewSchoolShops(v=>e.target.checked?[...v,sh.id]:v.filter(id=>id!==sh.id))}/>{sh.name}</label>)}</fieldset><button className="primary abb-btn" disabled={busy||!newSchoolShops.length}><Plus size={16}/>Add school</button></form></section>
     <div className="abb-list-tools"><label>Find school<input placeholder="Search school name" value={schoolQuery} onChange={e=>{setSchoolQuery(e.target.value);setSchoolPage(0);}} /></label></div>
     <div className="abb-stack">{schools.filter(x=>x.name.toLowerCase().includes(schoolQuery.trim().toLowerCase())).slice(schoolPage*15,(schoolPage+1)*15).map(s=><section className="panel abb-panel" key={s.id}>
       <div className="abb-section-title abb-school-header"><div className="abb-heading"><School size={20}/><h2>{s.name}</h2></div><div className="abb-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>rename('schools',s.id,s.name)}>Edit school</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('schools').delete().eq('id',s.id),`Delete ${s.name} and ALL its grades and assignments? This cannot be undone.`)}>Delete school</button></div></div>
-      <div className="abb-grade-grid">{grades.filter(g=>g.school_id===s.id).map(g=><div className="abb-grade-card" key={g.id}>
+      <fieldset className="abb-shop-picker"><legend>Available in shops</legend>{shops.map(sh=><label key={sh.id}><input type="checkbox" disabled={busy} checked={schoolShops.some(x=>x.school_id===s.id&&x.branch_id===sh.id)} onChange={e=>toggleSchoolShop(s.id,sh.id,e.target.checked)}/>{sh.name}</label>)}</fieldset><div className="abb-grade-grid">{grades.filter(g=>g.school_id===s.id).map(g=><div className="abb-grade-card" key={g.id}>
         <div className="abb-grade-heading"><div className="abb-heading"><GraduationCap size={18}/><strong>{g.name}</strong></div><div className="abb-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>rename('grades',g.id,g.name)}>Edit</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('grades').delete().eq('id',g.id),`Delete ${g.name} and its book assignments?`)}>Delete</button></div></div>
         <div className="abb-assigned">{books.filter(b=>b.grade_id===g.id).map(b=><div className="abb-assignment" key={b.id}><span>{b.products?.name||'Unknown book'} <small>× {b.quantity}</small></span><div className="abb-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>editAssignment(b)}>Edit qty</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('grade_books').delete().eq('id',b.id),'Remove this book from this grade?')}>Remove</button></div></div>)}{!books.some(b=>b.grade_id===g.id)&&<p className="abb-hint">No books assigned yet.</p>}</div>
         <form className="abb-assignment-form" onSubmit={e=>assign(e,g.id)}><select required aria-label={'Book for '+g.name} value={assignment[g.id]?.product_id||''} onChange={e=>setAssignment(v=>({...v,[g.id]:{...v[g.id],product_id:e.target.value}}))}><option value="">Select book</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label="Required copies" type="number" min="1" step="1" value={assignment[g.id]?.quantity??'1'} onChange={e=>setAssignment(v=>({...v,[g.id]:{...v[g.id],quantity:e.target.value}}))}/><button className="secondary abb-btn" disabled={busy}>Assign</button></form>
@@ -512,6 +516,7 @@ function ThermalReceipt({sale,shop}) {
 
 function POS({branchId}) {
   const [products,setProducts]=useState([]),[schools,setSchools]=useState([]),[grades,setGrades]=useState([]),[links,setLinks]=useState([]);
+  const [shopSchoolIds,setShopSchoolIds]=useState([]);
   const [stock,setStock]=useState(null),[view,setView]=useState('home'),[school,setSchool]=useState(''),[grade,setGrade]=useState('');
   const [query,setQuery]=useState(''),[cart,setCart]=useState([]),[held,setHeld]=useState(null);
   const [error,setError]=useState(''),[success,setSuccess]=useState(null),[busy,setBusy]=useState(false);
@@ -526,13 +531,14 @@ function POS({branchId}) {
       supabase.from('schools').select('id,name').order('name'),
       supabase.from('grades').select('id,name,school_id').order('name'),
       supabase.from('grade_books').select('grade_id,product_id,quantity'),
+      supabase.from('school_branches').select('school_id').eq('branch_id',branchId),
       supabase.from('stock').select('product_id,quantity').eq('branch_id',branchId),
       supabase.from('branches').select('name').eq('id',branchId).single()
-    ]).then(([p,s,g,l,st,br])=>{
+    ]).then(([p,s,g,l,sb,st,br])=>{
       if(!active)return;
-      setProducts(p.data||[]);setSchools(s.data||[]);setGrades(g.data||[]);setLinks(l.data||[]);setShopName(br.data?.name||'');
+      setProducts(p.data||[]);setSchools(s.data||[]);setGrades(g.data||[]);setLinks(l.data||[]);setShopSchoolIds((sb.data||[]).map(x=>x.school_id));setShopName(br.data?.name||'');
       if(!st.error)setStock(Object.fromEntries((st.data||[]).map(x=>[x.product_id,Number(x.quantity)])));
-      setError(getError(p,s,g,l));
+      setError(getError(p,s,g,l,sb));
     }).catch(e=>{if(active)setError(e.message)});
     return ()=>{active=false};
   },[branchId]);
@@ -568,7 +574,13 @@ function POS({branchId}) {
   const normalize=x=>(x||'').toLowerCase();
   const isStationery=p=>(p.category||'Books & textbooks')!=='Books & textbooks'&&(p.category||'Books & textbooks')!=='School courses';
   const categories=[{id:'schools',icon:'🏫',title:'School courses',detail:'School → grade → books',tone:'school'},{id:'books',icon:'📚',title:'Individual books',detail:'English, Urdu and more',tone:'books'},{id:'stationery',icon:'✏️',title:'Stationery',detail:'Pens, notebooks and supplies',tone:'stationery'},{id:'quick',icon:'▦',title:'Quick sale',detail:'Search or scan barcode',tone:'quick'}];
-  const filtered=products.filter(p=>(view!=='stationery'||isStationery(p))&&(view!=='books'||!isStationery(p))&&normalize(p.name+' '+(p.sku||'')).includes(normalize(query)));
+  const visibleSchools=schools.filter(s=>shopSchoolIds.includes(s.id));
+  const visibleGrades=grades.filter(g=>shopSchoolIds.includes(g.school_id));
+  const matchingGrades=visibleGrades.filter(g=>normalize(g.name+' '+(visibleSchools.find(s=>s.id===g.school_id)?.name||'')).includes(normalize(query.trim())));
+  const matchingSchoolIds=new Set(visibleSchools.filter(s=>normalize(s.name).includes(normalize(query.trim()))).map(s=>s.id));
+  const matchingGradeIds=new Set([...matchingGrades.map(g=>g.id),...visibleGrades.filter(g=>matchingSchoolIds.has(g.school_id)).map(g=>g.id)]);
+  const courseProductIds=new Set(links.filter(l=>matchingGradeIds.has(l.grade_id)).map(l=>l.product_id));
+  const filtered=products.filter(p=>(view!=='stationery'||isStationery(p))&&(view!=='books'||!isStationery(p))&&(!query.trim()||normalize(p.name+' '+(p.sku||'')+' '+(p.category||'')).includes(normalize(query.trim()))||(view==='quick'&&query.trim()&&courseProductIds.has(p.id))));
   const navigate=target=>{setView(target);setQuery('');setError('')};
   const back=()=>navigate(view==='grades'?'schools':view==='course'?'grades':'home');
   async function checkout(){
@@ -625,13 +637,13 @@ function POS({branchId}) {
       {whatsappError&&<span role="alert" style={{color:'#b91c1c',fontSize:13}}>{whatsappError}</span>}
       </div><div className="retail-print-only"><ThermalReceipt sale={success} shop={receiptShopDetails(shopName)}/></div></section>}
     <div className="retail-layout"><main className="retail-browse">
-      <label className="retail-search"><Search size={20}/><input value={query} onChange={e=>{setQuery(e.target.value);if(e.target.value&&view==='home')setView('quick')}} placeholder="Search book, stationery or scan barcode" aria-label="Search products or scan barcode"/></label>
+      <label className="retail-search"><Search size={20}/><input value={query} onChange={e=>{setQuery(e.target.value);if(e.target.value)setView('quick')}} placeholder="Search product, school, grade, SKU or category" aria-label="Search products, schools, grades or barcode"/></label>
       {view==='home'?<><div className="retail-section-title"><h2>What are you selling?</h2><span>Choose a category</span></div><div className="retail-categories">{categories.map(c=><button type="button" key={c.id} className={'retail-category '+c.tone} onClick={()=>navigate(c.id)}><span className="retail-category-icon">{c.icon}</span><strong>{c.title}</strong><small>{c.detail}</small><span className="retail-category-arrow">Explore →</span></button>)}</div><div className="retail-section-title"><h2>Quick add</h2><span>Available products</span></div><div className="retail-product-grid">{products.slice(0,8).map(listCard)}</div></>:
       <><div className="retail-breadcrumb"><button onClick={back}>← Back</button><span>{view==='schools'?'Select a school':view==='grades'?'Select a grade':view==='course'?'Course books':view==='stationery'?'Stationery':view==='books'?'Individual books':'Quick sale'}</span></div>
-      {view==='schools'?<div className="retail-tile-grid">{schools.map(s=><button className="retail-tile" key={s.id} onClick={()=>{setSchool(s.id);navigate('grades')}}><span>🏫</span><strong>{s.name}</strong><small>View grades →</small></button>)}{!schools.length&&<p className="empty">No schools available.</p>}</div>:
-      view==='grades'?<div className="retail-tile-grid">{grades.filter(g=>g.school_id===school).map(g=><button className="retail-tile" key={g.id} onClick={()=>{setGrade(g.id);navigate('course')}}><span>🎓</span><strong>{g.name}</strong><small>View course →</small></button>)}{!grades.some(g=>g.school_id===school)&&<p className="empty">No grades for this school yet.</p>}</div>:
+      {view==='schools'?<div className="retail-tile-grid">{visibleSchools.map(s=><button className="retail-tile" key={s.id} onClick={()=>{setSchool(s.id);navigate('grades')}}><span>🏫</span><strong>{s.name}</strong><small>View grades →</small></button>)}{!visibleSchools.length&&<p className="empty">No schools assigned to this shop.</p>}</div>:
+      view==='grades'?<div className="retail-tile-grid">{visibleGrades.filter(g=>g.school_id===school).map(g=><button className="retail-tile" key={g.id} onClick={()=>{setGrade(g.id);navigate('course')}}><span>🎓</span><strong>{g.name}</strong><small>View course →</small></button>)}{!visibleGrades.some(g=>g.school_id===school)&&<p className="empty">No grades for this school yet.</p>}</div>:
       view==='course'?<><section className="retail-course-banner"><div><small>{schools.find(x=>x.id===school)?.name} / {grades.find(x=>x.id===grade)?.name}</small><h2>Complete course</h2><p>{courseItems.length} assigned titles · {money(courseTotal)}</p></div><button className="primary" disabled={!courseItems.length} onClick={addCourse}>+ Add full course</button></section><div className="retail-product-grid">{courseItems.map(x=>listCard(x.product))}</div>{!courseItems.length&&<p className="empty">No books assigned to this grade.</p>}</>:
-      <><div className="retail-section-title"><h2>{view==='stationery'?'Stationery & supplies':view==='books'?'Books':'Search all items'}</h2><span>{filtered.length} items</span></div><div className="retail-product-grid">{filtered.slice(0,120).map(listCard)}</div>{!filtered.length&&<p className="empty">No matching products. Add them in Admin → Products & Inventory first.</p>}</>}
+      <><div className="retail-section-title"><h2>{view==='stationery'?'Stationery & supplies':view==='books'?'Books':'Search all items'}</h2><span>{filtered.length} items</span></div>{view==='quick'&&query.trim()&&<div className="retail-tile-grid">{visibleSchools.filter(s=>normalize(s.name).includes(normalize(query.trim()))).slice(0,20).map(s=><button className="retail-tile" key={s.id} onClick={()=>{setSchool(s.id);navigate('grades')}}><span>🏫</span><strong>{s.name}</strong><small>Browse school grades →</small></button>)}{matchingGrades.slice(0,30).map(g=><button className="retail-tile" key={g.id} onClick={()=>{setSchool(g.school_id);setGrade(g.id);navigate('course')}}><span>🎓</span><strong>{g.name}</strong><small>{visibleSchools.find(s=>s.id===g.school_id)?.name} · View course →</small></button>)}</div>}<div className="retail-product-grid">{filtered.slice(0,120).map(listCard)}</div>{!filtered.length&&<p className="empty">No matching products. Add them in Admin → Products & Inventory first.</p>}</>}
       </>}
     </main>
     <aside className={'retail-cart '+(cartOpen?'retail-cart-open':'')}><div className="retail-cart-heading"><h2><ShoppingCart size={20}/> Current bill <span>{cart.reduce((n,x)=>n+x.qty,0)}</span></h2><button className="retail-cart-close" onClick={()=>setCartOpen(false)}>Close</button></div>
