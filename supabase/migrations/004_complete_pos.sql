@@ -139,10 +139,10 @@ BEGIN
  PERFORM public.pos_admin_required();
  IF p_from IS NULL OR p_to IS NULL OR p_to<p_from OR p_to-p_from>366 THEN RAISE EXCEPTION 'Invalid reporting period';END IF;
  RETURN jsonb_build_object(
- 'daily_sales',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT s.created_at::date day,count(*) sales,sum(s.total) gross FROM public.sales s WHERE s.created_at>=p_from AND s.created_at<p_to+1 GROUP BY 1 ORDER BY 1) x),'[]'::jsonb),
- 'branches',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT b.id,b.name,count(s.id) sales,coalesce(sum(s.total),0) gross FROM public.branches b LEFT JOIN public.sales s ON s.branch_id=b.id AND s.created_at>=p_from AND s.created_at<p_to+1 GROUP BY b.id,b.name ORDER BY b.name) x),'[]'::jsonb),
- 'returns',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT r.branch_id,count(*) returns,coalesce(sum(r.refund_amount),0) refunds FROM public.sale_returns r WHERE r.status='completed' AND r.completed_at>=p_from AND r.completed_at<p_to+1 GROUP BY r.branch_id) x),'[]'::jsonb),
- 'stock',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT b.name branch,p.name product,st.quantity,p.price FROM public.stock st JOIN public.branches b ON b.id=st.branch_id JOIN public.products p ON p.id=st.product_id ORDER BY b.name,p.name LIMIT 10000) x),'[]'::jsonb),
+ 'daily_sales',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT s.created_at::date AS sale_date,count(*) AS sales,sum(s.total) AS gross FROM public.sales s WHERE s.created_at>=p_from AND s.created_at<p_to+1 GROUP BY s.created_at::date ORDER BY sale_date) x),'[]'::jsonb),
+ 'branches',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT b.id,b.name,count(s.id) AS sales,coalesce(sum(s.total),0) AS gross FROM public.branches b LEFT JOIN public.sales s ON s.branch_id=b.id AND s.created_at>=p_from AND s.created_at<p_to+1 GROUP BY b.id,b.name ORDER BY b.name) x),'[]'::jsonb),
+ 'returns',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT r.branch_id,count(*) AS returns_count,coalesce(sum(r.refund_amount),0) AS refunds FROM public.sale_returns r WHERE r.status='completed' AND r.completed_at>=p_from AND r.completed_at<p_to+1 GROUP BY r.branch_id) x),'[]'::jsonb),
+ 'stock',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT b.name AS branch,p.name AS product,st.quantity,p.price FROM public.stock st JOIN public.branches b ON b.id=st.branch_id JOIN public.products p ON p.id=st.product_id ORDER BY b.name,p.name LIMIT 10000) x),'[]'::jsonb),
  'audit',coalesce((SELECT jsonb_agg(to_jsonb(x)) FROM (SELECT created_at,action,entity_type,entity_id,branch_id,actor_id FROM public.audit_events WHERE created_at>=p_from AND created_at<p_to+1 ORDER BY created_at DESC LIMIT 1000) x),'[]'::jsonb)
  );
 END $$;
