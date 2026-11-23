@@ -344,11 +344,11 @@ function Schools() {
       supabase.from('schools').select('id,name').order('name'),
       supabase.from('grades').select('id,name,school_id').order('name'),
       supabase.from('grade_books').select('id,grade_id,product_id,quantity,products(name)'),
-      supabase.from('products').select('id,name').eq('is_active',true).order('name'),
+      supabase.from('products').select('id,name').eq('is_active',true).is('deleted_at',null).order('name'),
       supabase.from('branches').select('id,name').order('name'),
       supabase.from('school_branches').select('school_id,branch_id')
     ]);
-    setSchools(s.data||[]);setGrades(g.data||[]);setBooks(b.data||[]);setProducts(p.data||[]);setShops(sh.data||[]);setSchoolShops(ss.data||[]);
+    setSchools(s.data||[]);setGrades(g.data||[]);setBooks((b.data||[]).filter(row=>p.data?.some(product=>product.id===row.product_id)));setProducts(p.data||[]);setShops(sh.data||[]);setSchoolShops(ss.data||[]);
     const err=getError(s,g,b,p,sh,ss);if(err)throw Error(err);
   },[]);
   useEffect(()=>{load().catch(e=>setError(e.message));},[load]);
@@ -394,7 +394,7 @@ function Products({admin=false}) {
   const [categoryFilter,setCategoryFilter]=useState('All categories'),[productQuery,setProductQuery]=useState(''),[productPage,setProductPage]=useState(0),[stockMode,setStockMode]=useState('add'),[showArchived,setShowArchived]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[success,setSuccess]=useState('');
   const load=useCallback(async()=>{
     const [p,b,s]=await Promise.all([
-      supabase.from('products').select('id,name,sku,price,is_active,category').order('name'),
+      supabase.from('products').select('id,name,sku,price,is_active,category').is('deleted_at',null).order('name'),
       supabase.from('branches').select('id,name,enabled').order('name'),
       supabase.from('stock').select('branch_id,product_id,quantity')
     ]);
@@ -440,13 +440,13 @@ function Products({admin=false}) {
   }
   async function edit(p){const newCategory=window.prompt('Category: '+PRODUCT_CATEGORIES.join(', '),p.category||'Books & textbooks');if(newCategory===null)return;if(!PRODUCT_CATEGORIES.includes(newCategory.trim())){setError('Choose a category from the listed options.');return;}const n=window.prompt('Book name',p.name);if(n===null)return;const s=window.prompt('SKU / barcode (blank allowed)',p.sku||'');if(s===null)return;const input=window.prompt('Price in PKR',String(p.price));if(input===null)return;const value=Number(input);if(!n.trim()||!input.trim()||!Number.isFinite(value)||value<0){setError('Invalid name or price.');return;}await mutate(()=>supabase.from('products').update({name:n.trim(),sku:s.trim()||null,price:value,category:newCategory.trim()}).eq('id',p.id));}
   async function safeDelete(p){
-    if(!window.confirm(`Delete ${p.name}? Only products with no dependent history can be permanently deleted. Otherwise, archive the product.`))return;
+    if(!window.confirm(`Remove ${p.name} from the POS permanently? Existing receipts and historical records will be preserved. This action cannot be undone from the POS.`))return;
     setBusy(true);setError('');setSuccess('');
     try{
       const {error}=await supabase.rpc('pos_safe_delete_product',{p_product_id:p.id});
       if(error)throw error;
-      await load();setSuccess('Unused product deleted.');
-    }catch(e){setError(e.message.includes('Could not find the function')?'Safe deletion requires the database migration. No product was deleted.':e.message)}finally{setBusy(false)}
+      await load();setSuccess('Product removed from the POS. Historical receipts are preserved.');
+    }catch(e){setError(e.message.includes('Could not find the function')?'Product removal function is missing. No product was removed.':e.message)}finally{setBusy(false)}
   }
   async function saveCost(p){
     const answer=window.prompt('Purchase cost in PKR for '+p.name+' (not selling price)',costs[p.id]===undefined?'':String(costs[p.id]));
@@ -579,7 +579,7 @@ function POS({branchId}) {
   useEffect(()=>{
     let active=true;
     Promise.all([
-      supabase.from('products').select('id,name,price,sku,category').eq('is_active',true).order('name'),
+      supabase.from('products').select('id,name,price,sku,category').eq('is_active',true).is('deleted_at',null).order('name'),
       supabase.from('schools').select('id,name').order('name'),
       supabase.from('grades').select('id,name,school_id').order('name'),
       supabase.from('grade_books').select('grade_id,product_id,quantity'),

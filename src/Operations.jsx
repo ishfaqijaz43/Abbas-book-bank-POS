@@ -11,9 +11,15 @@ export function Operations(){
  const [productId,setProductId]=useState(''),[qty,setQty]=useState('1'),[cost,setCost]=useState('0'),[reference,setReference]=useState('');
  const [items,setItems]=useState([]);
  async function refresh(){
-   const {data:result,error:err}=await supabase.rpc('pos_admin_overview');
-   if(err) throw err;
-   setData({...empty,...result});
+   const [overview, catalog] = await Promise.all([
+     supabase.rpc('pos_admin_overview'),
+     supabase.from('products').select('id').eq('is_active', true).is('deleted_at', null)
+   ]);
+   if(overview.error) throw overview.error;
+   if(catalog.error) throw catalog.error;
+   const allowed = new Set((catalog.data || []).map(p => p.id));
+   setData({...empty,...overview.data, products:(overview.data?.products || []).filter(p => allowed.has(p.id))});
+   setItems(previous => previous.filter(item => allowed.has(item.product_id)));
  }
  useEffect(()=>{refresh().catch(e=>setError(e.message));},[]);
  async function action(name,params,confirmation){
@@ -27,6 +33,7 @@ export function Operations(){
  }
  const addItem=()=>{
    if(!productId || !Number.isInteger(Number(qty)) || Number(qty)<1 || Number(qty)>1000000 || (tab==='purchases'&&(!Number.isFinite(Number(cost))||Number(cost)<0))) {setError('Select a product and enter a valid quantity and cost.');return;}
+   if(!data.products.some(p=>p.id===productId && p.is_active)){setError('This product is no longer available. Refresh and choose another product.');return;}
    if(items.some(x=>x.product_id===productId)){setError('Product already added.');return;}
    setError('');setItems(x=>[...x,{product_id:productId,quantity:Number(qty),...(tab==='purchases'?{unit_cost:Number(cost)}:{})}]);
  };
@@ -34,6 +41,9 @@ export function Operations(){
  const branchName=id=>data.branches.find(x=>x.id===id)?.name||id?.slice(0,8);
  const submitItems=async()=>{
    if(!items.length){setError('Add at least one product.');return;}
+   const {data:available,error:availabilityError}=await supabase.from('products').select('id').in('id',items.map(x=>x.product_id)).eq('is_active',true).is('deleted_at',null);
+   if(availabilityError){setError(availabilityError.message);return;}
+   if((available||[]).length!==items.length){setError('A selected product was removed or archived. Refresh and select available products.');return;}
    const isPurchase=tab==='purchases';
    if(isPurchase && (!supplierId||!branchId)){setError('Select supplier and receiving shop.');return;}
    if(!isPurchase && (!fromId||!toId||fromId===toId)){setError('Select two different shops.');return;}
