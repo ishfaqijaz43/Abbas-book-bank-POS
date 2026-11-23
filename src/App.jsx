@@ -210,12 +210,12 @@ function ShopManager() {
   </>;
 }
 
-const adminNav=[['/admin','Dashboard',LayoutDashboard],['/admin/schools','Schools & Grades',School],['/admin/products','Products & Inventory',Package],['/admin/sales','Sales',ShoppingCart],['/admin/shops','Manage Shops',Store],['/admin/operations','Purchasing & Transfers',Package],['/admin/returns','Returns & Exchanges',ShoppingCart],['/admin/staff','Staff Directory',Store],['/admin/reports','Reports & Audit',LayoutDashboard],['/admin/cash','Cash Registers',Store],['/admin/expenses','Expenses',CreditCard]];
+const adminNav=[['/admin','Dashboard',LayoutDashboard],['/admin/schools','Schools & Grades',School],['/admin/products','Products & Inventory',Package],['/admin/sales','Sales',ShoppingCart],['/admin/shops','Manage Shops',Store],['/admin/operations','Purchasing & Transfers',Package],['/admin/returns','Returns & Exchanges',ShoppingCart],['/admin/staff','Staff Directory',Store],['/admin/reports','Reports & Audit',LayoutDashboard],['/admin/cash','Cash Registers',Store],['/admin/expenses','Expenses',CreditCard],['/admin/settings','Settings',KeyRound]];
 const sellerNav=[['/seller','New Sale',ShoppingCart],['/seller/catalog','Browse Books',BookOpen],['/seller/history','My Sales',LayoutDashboard],['/seller/stock','My Shop Stock',Package],['/seller/returns','Returns & Exchanges',ShoppingCart],['/seller/cash','Cash Register',Store]];
 function Shell({role,branchId,logout}) {
   const [open,setOpen]=useState(false);const nav=role==='admin'?adminNav:sellerNav;
   return <div className="shell"><style>{abbasResponsiveStyles}</style><aside className={'sidebar '+(open?'open':'')}><div className="side-brand"><span className="brand-duo sidebar-brand-duo"><img src="/branding/abbas-book-bank.jpg" alt="Abbas Book Bank logo"/><img src="/branding/af-notebook.jpg" alt="AF Notebook logo"/></span><span><b>ABBAS BOOK BANK</b><small>BY AF NOTEBOOK</small></span></div><div className="role-label">{role==='admin'?'ADMIN WORKSPACE':'SELLER WORKSPACE'}</div><nav>{nav.map(([url,label,Icon])=><NavLink key={url} to={url} end onClick={()=>setOpen(false)} className={({isActive})=>isActive?'nav active':'nav'}><Icon size={19}/>{label}</NavLink>)}</nav></aside>
-    <div className="workspace"><header className="topbar"><button className="icon-btn mobile-only" onClick={()=>setOpen(!open)}><Menu/></button><div className="top-brand"><span className="brand-duo topbar-brand-duo"><img src="/branding/abbas-book-bank.jpg" alt="Abbas Book Bank logo"/><img src="/branding/af-notebook.jpg" alt="AF Notebook logo"/></span><span><b>Abbas Book Bank by AF Notebook</b><span className="top-sub">{role==='admin'?'Business management':'Sales counter · Selected shop'}</span></span></div><div className="abb-top-actions"><span className="role-pill">{role==='admin'?'Administrator':'Seller'}</span><button className="abb-top-signout" onClick={logout} title="Sign out"><LogOut size={16}/> <span>Sign out</span></button></div></header><div className="content"><Routes>{role==='admin'?<><Route path="/admin" element={<Dashboard/>}/><Route path="/admin/schools" element={<AdminPageBoundary><Schools/></AdminPageBoundary>}/><Route path="/admin/products" element={<Products admin/>}/><Route path="/admin/sales" element={<SalesLedger admin/>}/><Route path="/admin/shops" element={<ShopManager/>}/><Route path="/admin/operations" element={<Operations/>}/><Route path="/admin/returns" element={<Returns/>}/><Route path="/admin/staff" element={<Staff/>}/><Route path="/admin/reports" element={<Reports/>}/><Route path="/admin/cash" element={<AdminCashRegisters/>}/><Route path="/admin/expenses" element={<Expenses/>}/><Route path="*" element={<Navigate to="/admin"/>}/></>:<><Route path="/seller" element={<POS branchId={branchId}/>}/><Route path="/seller/catalog" element={<Products/>}/><Route path="/seller/history" element={<SalesLedger/>}/><Route path="/seller/stock" element={<SellerStock branchId={branchId}/>}/><Route path="/seller/returns" element={<Returns seller/>}/><Route path="/seller/cash" element={<CashRegisterPage/>}/><Route path="*" element={<Navigate to="/seller"/>}/></>}</Routes><footer className="abb-credit">Developed by <strong>ByteCraft Solutions</strong></footer></div></div>{open&&<div className="overlay mobile-only" onClick={()=>setOpen(false)}/>}</div>;
+    <div className="workspace"><header className="topbar"><button className="icon-btn mobile-only" onClick={()=>setOpen(!open)}><Menu/></button><div className="top-brand"><span className="brand-duo topbar-brand-duo"><img src="/branding/abbas-book-bank.jpg" alt="Abbas Book Bank logo"/><img src="/branding/af-notebook.jpg" alt="AF Notebook logo"/></span><span><b>Abbas Book Bank by AF Notebook</b><span className="top-sub">{role==='admin'?'Business management':'Sales counter · Selected shop'}</span></span></div><div className="abb-top-actions"><span className="role-pill">{role==='admin'?'Administrator':'Seller'}</span><button className="abb-top-signout" onClick={logout} title="Sign out"><LogOut size={16}/> <span>Sign out</span></button></div></header><div className="content"><Routes>{role==='admin'?<><Route path="/admin" element={<Dashboard/>}/><Route path="/admin/schools" element={<AdminPageBoundary><Schools/></AdminPageBoundary>}/><Route path="/admin/products" element={<Products admin/>}/><Route path="/admin/sales" element={<SalesLedger admin/>}/><Route path="/admin/shops" element={<ShopManager/>}/><Route path="/admin/operations" element={<Operations/>}/><Route path="/admin/returns" element={<Returns/>}/><Route path="/admin/staff" element={<Staff/>}/><Route path="/admin/reports" element={<Reports/>}/><Route path="/admin/cash" element={<AdminCashRegisters/>}/><Route path="/admin/expenses" element={<Expenses/>}/><Route path="/admin/settings" element={<AdminSettings/>}/><Route path="*" element={<Navigate to="/admin"/>}/></>:<><Route path="/seller" element={<POS branchId={branchId}/>}/><Route path="/seller/catalog" element={<Products/>}/><Route path="/seller/history" element={<SalesLedger/>}/><Route path="/seller/stock" element={<SellerStock branchId={branchId}/>}/><Route path="/seller/returns" element={<Returns seller/>}/><Route path="/seller/cash" element={<CashRegisterPage/>}/><Route path="*" element={<Navigate to="/seller"/>}/></>}</Routes><footer className="abb-credit">Developed by <strong>ByteCraft Solutions</strong></footer></div></div>{open&&<div className="overlay mobile-only" onClick={()=>setOpen(false)}/>}</div>;
 }
 function PageHead({title,desc,action}) {return <div className="page-head"><div><h1>{title}</h1><p className="muted">{desc}</p></div>{action}</div>;}
 function Notice({message}) {return message?<p className="error" role="alert">{message}</p>:null;}
@@ -248,7 +248,8 @@ function Dashboard() {
       if(financial.error)throw financial.error;
       if(sales.error)throw sales.error;
       if(history.error)throw history.error;
-      setData(financial.data);setRecent(sales.data||[]);setTrend(history.data||[]);setTrendLimited((history.data||[]).length===1000);
+      const periodStart=new Date(financial.data?.period_started_at||0).getTime();
+      setData(financial.data);setRecent((sales.data||[]).filter(x=>new Date(x.created_at).getTime()>=periodStart));setTrend((history.data||[]).filter(x=>new Date(x.created_at).getTime()>=periodStart));setTrendLimited((history.data||[]).length===1000);
     }catch(e){setErr(e.message||String(e));}finally{setLoading(false);}
   },[]);
   useEffect(()=>{refresh();},[refresh]);
@@ -295,6 +296,43 @@ class AdminPageBoundary extends React.Component {
   render(){if(this.state.error)return <section className="panel" role="alert"><h2>Page could not load</h2><p>{this.state.error.message||'Unexpected error'}</p><button className="primary" onClick={()=>this.setState({error:null})}>Try again</button></section>;return this.props.children;}
 }
 
+function AdminSettings(){
+  const [preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[pin,setPin]=useState(''),[success,setSuccess]=useState('');
+  async function checkReadiness(){
+    setBusy(true);setError('');
+    try {const {data,error:rpcError}=await supabase.rpc('pos_reset_preflight');if(rpcError)throw rpcError;setPreview(data);}
+    catch(e){setError(e.message||String(e));}finally{setBusy(false);}
+  }
+  async function executeReset(){
+    if(!preview?.ready){setError('Run readiness check and close all cash registers first.');return;}
+    if(!/^[0-9]{6}$/.test(pin)){setError('Enter your fresh six-digit admin PIN.');return;}
+    if(!window.confirm('Start a NEW financial reporting period for BOTH shops? Historical transactions and inventory will be preserved.'))return;
+    setBusy(true);setError('');setSuccess('');
+    try{
+      const {data,error:rpcError}=await supabase.rpc('pos_reset_financial_period',{p_pin:pin});
+      if(rpcError)throw rpcError;
+      if(!data?.ok)throw new Error(data?.error||'Reset was not completed.');
+      setSuccess('New financial reporting period started. Refresh the dashboard to view current-period totals.');
+      setPreview(null);
+    }catch(e){setError(e.message||String(e));}finally{setPin('');setBusy(false);}
+  }
+  return <div className="abb-page"><PageHead title="Settings" desc="Administration and production launch controls"/>
+    <section className="panel abb-panel"><h2>Production data reset</h2>
+      <p>Option A preserves products, schools, grades, purchase costs, and verified physical stock. Historical financial records and receipts must remain available for audit.</p>
+      <p className="premium-warning">This action starts a new reporting period. It does not delete historical receipts or change inventory. Close all shop cash registers first.</p>
+      <button className="secondary abb-btn" onClick={checkReadiness} disabled={busy}>{busy?'Checking…':'Check reset readiness (read-only)'}</button>
+      <Notice message={error}/>
+      {success&&<p className="success" role="status">{success}</p>}
+      <div className="abb-field"><label>Fresh admin PIN (required for every reset)</label><input type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="6-digit admin PIN"/></div>
+      <button className="primary abb-btn" disabled={busy||!preview?.ready||pin.length!==6} onClick={executeReset}>Start new financial reporting period</button>
+      {preview&&<div className="panel" role="status"><h3>{preview.ready?'Cash registers closed':'Reset blocked: open cash register'}</h3>
+        <p>Open registers: {preview.open_registers} | Historical sales: {preview.historical_sales} | Returns: {preview.historical_returns} | Expenses: {preview.historical_expenses}</p>
+        <p>Inventory stock rows preserved: {preview.stock_rows_preserved}. Reporting period: {preview.active_period_id}.</p>
+        <p>{preview.note}</p></div>}
+      <p>Historical receipts remain available. Current-period reporting starts from the reset time; physical inventory does not change.</p>
+    </section></div>;
+}
+
 function Schools() {
   const [schools,setSchools]=useState([]),[grades,setGrades]=useState([]),[books,setBooks]=useState([]),[products,setProducts]=useState([]);
   const [schoolName,setSchoolName]=useState(''),[newGrade,setNewGrade]=useState({}),[assignment,setAssignment]=useState({});
@@ -326,11 +364,16 @@ function Schools() {
   async function addGrade(e,schoolId){e.preventDefault();const name=(newGrade[schoolId]||'').trim();if(!name)return;if(await mutate(()=>supabase.from('grades').insert({school_id:schoolId,name})))setNewGrade(v=>({...v,[schoolId]:''}));}
   async function assign(e,gradeId){e.preventDefault();const a=assignment[gradeId]||{};const quantity=Number(a.quantity||1);if(!a.product_id||!Number.isSafeInteger(quantity)||quantity<1){setError('Choose a book and a valid quantity.');return;}await mutate(()=>supabase.from('grade_books').upsert({grade_id:gradeId,product_id:a.product_id,quantity},{onConflict:'grade_id,product_id'}));}
   async function editAssignment(row){const answer=window.prompt('Copies required for this grade',String(row.quantity));if(answer===null)return;const quantity=Number(answer);if(!Number.isSafeInteger(quantity)||quantity<1){setError('Quantity must be a positive whole number.');return;}await mutate(()=>supabase.from('grade_books').update({quantity}).eq('id',row.id));}
+  const matchingSchools=schools.filter(s=>{
+    const q=schoolQuery.trim().toLowerCase();if(!q)return true;
+    const related=grades.filter(g=>g.school_id===s.id);
+    return s.name.toLowerCase().includes(q)||related.some(g=>g.name.toLowerCase().includes(q)||books.some(b=>b.grade_id===g.id&&(b.products?.name||'').toLowerCase().includes(q)));
+  });
   return <div className="abb-page"><PageHead title="Schools & grades" desc="Manage schools, classes and required books"/><Notice message={error}/>{message&&<p className="success">{message}</p>}
     <section className="panel abb-panel"><div className="abb-section-title"><h2>Add a school</h2><span className="abb-hint">Create a school before adding its grades</span></div>
       <form className="abb-form-line" onSubmit={addSchool}><input required placeholder="School name" value={schoolName} onChange={e=>setSchoolName(e.target.value)}/><fieldset className="abb-shop-picker"><legend>Assign to shop(s)</legend>{shops.map(sh=><label key={sh.id}><input type="checkbox" checked={newSchoolShops.includes(sh.id)} onChange={e=>setNewSchoolShops(v=>e.target.checked?[...v,sh.id]:v.filter(id=>id!==sh.id))}/>{sh.name}</label>)}</fieldset><button className="primary abb-btn" disabled={busy||!newSchoolShops.length}><Plus size={16}/>Add school</button></form></section>
-    <div className="abb-list-tools"><label>Find school<input placeholder="Search school name" value={schoolQuery} onChange={e=>{setSchoolQuery(e.target.value);setSchoolPage(0);}} /></label></div>
-    <div className="abb-stack">{schools.filter(x=>x.name.toLowerCase().includes(schoolQuery.trim().toLowerCase())).slice(schoolPage*15,(schoolPage+1)*15).map(s=><section className="panel abb-panel" key={s.id}>
+    <div className="abb-list-tools"><label>Find school<input placeholder="Search school, grade or assigned book" value={schoolQuery} onChange={e=>{setSchoolQuery(e.target.value);setSchoolPage(0);}} /></label></div>
+    <div className="abb-stack">{matchingSchools.slice(schoolPage*15,(schoolPage+1)*15).map(s=><section className="panel abb-panel" key={s.id}>
       <div className="abb-section-title abb-school-header"><div className="abb-heading"><School size={20}/><h2>{s.name}</h2></div><div className="abb-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>rename('schools',s.id,s.name)}>Edit school</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('schools').delete().eq('id',s.id),`Delete ${s.name} and ALL its grades and assignments? This cannot be undone.`)}>Delete school</button></div></div>
       <fieldset className="abb-shop-picker"><legend>Available in shops</legend>{shops.map(sh=><label key={sh.id}><input type="checkbox" disabled={busy} checked={schoolShops.some(x=>x.school_id===s.id&&x.branch_id===sh.id)} onChange={e=>toggleSchoolShop(s.id,sh.id,e.target.checked)}/>{sh.name}</label>)}</fieldset><div className="abb-grade-grid">{grades.filter(g=>g.school_id===s.id).map(g=><div className="abb-grade-card" key={g.id}>
         <div className="abb-grade-heading"><div className="abb-heading"><GraduationCap size={18}/><strong>{g.name}</strong></div><div className="abb-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>rename('grades',g.id,g.name)}>Edit</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('grades').delete().eq('id',g.id),`Delete ${g.name} and its book assignments?`)}>Delete</button></div></div>
@@ -338,7 +381,7 @@ function Schools() {
         <form className="abb-assignment-form" onSubmit={e=>assign(e,g.id)}><select required aria-label={'Book for '+g.name} value={assignment[g.id]?.product_id||''} onChange={e=>setAssignment(v=>({...v,[g.id]:{...v[g.id],product_id:e.target.value}}))}><option value="">Select book</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><input aria-label="Required copies" type="number" min="1" step="1" value={assignment[g.id]?.quantity??'1'} onChange={e=>setAssignment(v=>({...v,[g.id]:{...v[g.id],quantity:e.target.value}}))}/><button className="secondary abb-btn" disabled={busy}>Assign</button></form>
       </div>)}</div>
       <form className="abb-form-line abb-add-grade" onSubmit={e=>addGrade(e,s.id)}><input required placeholder="New grade or class" value={newGrade[s.id]||''} onChange={e=>setNewGrade(v=>({...v,[s.id]:e.target.value}))}/><button className="secondary abb-btn" disabled={busy}><Plus size={16}/>Add grade</button></form>
-    </section>)}</div><div className="abb-pager"><button className="secondary" disabled={schoolPage===0} onClick={()=>setSchoolPage(v=>Math.max(0,v-1))}>Previous</button><span>Page {schoolPage+1}</span><button className="secondary" disabled={(schoolPage+1)*15>=schools.filter(x=>x.name.toLowerCase().includes(schoolQuery.trim().toLowerCase())).length} onClick={()=>setSchoolPage(v=>v+1)}>Next</button></div>{!schools.length&&<p className="empty">Start by adding a school.</p>}
+    </section>)}</div><div className="abb-pager"><button className="secondary" disabled={schoolPage===0} onClick={()=>setSchoolPage(v=>Math.max(0,v-1))}>Previous</button><span>Page {schoolPage+1}</span><button className="secondary" disabled={(schoolPage+1)*15>=matchingSchools.length} onClick={()=>setSchoolPage(v=>v+1)}>Next</button></div>{!schools.length&&<p className="empty">Start by adding a school.</p>}
   </div>;
 }
 
@@ -396,6 +439,15 @@ function Products({admin=false}) {
     }catch(err){setError(err.message);}finally{setBusy(false);}
   }
   async function edit(p){const newCategory=window.prompt('Category: '+PRODUCT_CATEGORIES.join(', '),p.category||'Books & textbooks');if(newCategory===null)return;if(!PRODUCT_CATEGORIES.includes(newCategory.trim())){setError('Choose a category from the listed options.');return;}const n=window.prompt('Book name',p.name);if(n===null)return;const s=window.prompt('SKU / barcode (blank allowed)',p.sku||'');if(s===null)return;const input=window.prompt('Price in PKR',String(p.price));if(input===null)return;const value=Number(input);if(!n.trim()||!input.trim()||!Number.isFinite(value)||value<0){setError('Invalid name or price.');return;}await mutate(()=>supabase.from('products').update({name:n.trim(),sku:s.trim()||null,price:value,category:newCategory.trim()}).eq('id',p.id));}
+  async function safeDelete(p){
+    if(!window.confirm(`Delete ${p.name}? Only products with no dependent history can be permanently deleted. Otherwise, archive the product.`))return;
+    setBusy(true);setError('');setSuccess('');
+    try{
+      const {error}=await supabase.rpc('pos_safe_delete_product',{p_product_id:p.id});
+      if(error)throw error;
+      await load();setSuccess('Unused product deleted.');
+    }catch(e){setError(e.message.includes('Could not find the function')?'Safe deletion requires the database migration. No product was deleted.':e.message)}finally{setBusy(false)}
+  }
   async function saveCost(p){
     const answer=window.prompt('Purchase cost in PKR for '+p.name+' (not selling price)',costs[p.id]===undefined?'':String(costs[p.id]));
     if(answer===null)return;
@@ -418,7 +470,7 @@ function Products({admin=false}) {
     });
     if(ok)setQuantities(v=>{const next={...v};delete next[key];return next;});
   }
-  const visible=products.filter(p=>(admin?(showArchived||p.is_active):p.is_active)&&(categoryFilter==='All categories'||(p.category||'Books & textbooks')===categoryFilter)&&`${p.name} ${p.sku||''} ${p.category||''}`.toLowerCase().includes(productQuery.trim().toLowerCase()));
+  const visible=products.filter(p=>(admin?(showArchived?!p.is_active:p.is_active):p.is_active)&&(categoryFilter==='All categories'||(p.category||'Books & textbooks')===categoryFilter)&&`${p.name} ${p.sku||''} ${p.category||''}`.toLowerCase().includes(productQuery.trim().toLowerCase()));
   return <div className="abb-page"><PageHead title={admin?'Products & inventory':'Book catalog'} desc={admin?'Manage books, stationery and stock across every shop':'Browse products and current stock'}/><Notice message={error}/>{success&&<p className="success">{success}</p>}
     {admin&&<section className="panel abb-panel"><div className="abb-section-title"><h2>Add product</h2><span className="abb-hint">Set opening quantity for each shop</span></div>
       <form className="abb-add-form" onSubmit={add}>
@@ -430,14 +482,14 @@ function Products({admin=false}) {
       </form></section>}
     {admin&&<section className="panel abb-panel"><div className="abb-section-title"><h2>Manage stock</h2><span className="abb-hint">Changes are recorded in inventory history</span></div>
       <div className="abb-stock-settings"><div className="abb-field"><label>Adjustment mode</label><select value={stockMode} onChange={e=>{setStockMode(e.target.value);setQuantities({});}}><option value="add">Add received copies</option><option value="set">Set exact total copies</option></select></div><div className="abb-field"><label>Shop to update</label><select aria-label="Choose shop" value={branch} onChange={e=>setBranch(e.target.value)}>{shops.map(shop=><option key={shop.id} value={shop.id}>{shop.name}{shop.enabled?'':' (disabled)'}</option>)}</select></div><div className="abb-field"><label>Reason for stock change <span className="abb-required">*</span></label><input aria-label="Stock adjustment reason" placeholder="e.g. New delivery" value={reason} onChange={e=>setReason(e.target.value)}/></div></div>
-      <div className="abb-setting-footer"><p className="abb-hint">Select a shop, enter a reason, then update a book below. Other shops are unaffected.</p><label className="abb-check"><input type="checkbox" checked={showArchived} onChange={e=>setShowArchived(e.target.checked)}/> Show archived books</label></div>
+      <div className="abb-setting-footer"><p className="abb-hint">Select a shop, enter a reason, then update a book below. Other shops are unaffected.</p><div className="abb-actions"><button type="button" className={!showArchived?"primary abb-btn":"secondary abb-btn"} onClick={()=>{setShowArchived(false);setProductPage(0)}}>Active products</button><button type="button" className={showArchived?"primary abb-btn":"secondary abb-btn"} onClick={()=>{setShowArchived(true);setProductPage(0)}}>Archived products</button></div></div>
     </section>}
-    <section className="panel abb-panel"><div className="abb-section-title"><h2>Products <span className="abb-count">{visible.length}</span></h2><span className="abb-hint">Current quantities by shop</span></div>
+    <section className="panel abb-panel"><div className="abb-section-title"><h2>{admin&&showArchived?"Archived products":"Products"} <span className="abb-count">{visible.length}</span></h2><span className="abb-hint">Current quantities by shop</span></div>
       <div className="abb-list-tools"><label>Search inventory<input type="search" placeholder="Search product name, SKU or category" value={productQuery} onChange={e=>{setProductQuery(e.target.value);setProductPage(0);}} /></label></div>
       <div className="abb-field" style={{maxWidth:320,marginBottom:16}}><label>Filter products by category</label><select value={categoryFilter} onChange={e=>{setCategoryFilter(e.target.value);setProductPage(0);}}><option>All categories</option>{PRODUCT_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div><div className="abb-books">{visible.slice(productPage*24,(productPage+1)*24).map(p=><article className="abb-book" key={p.id}>
         <div className="abb-book-top"><div className="abb-book-name"><span className="abb-book-icon"><BookOpen size={20}/></span><div><h3>{p.name}</h3><span className="abb-hint">{p.category||'Books & textbooks'} · SKU: {p.sku||'Not set'}{!p.is_active?' · Archived':''}</span></div></div><strong className="abb-price">{money(p.price)}</strong></div>
         <div className="abb-shop-grid">{shops.map(shop=><div key={shop.id} className={'abb-shop-qty '+(shop.id===branch&&admin?'abb-shop-selected':'')}><span>{shop.name}</span><strong>{qty(p.id,shop.id)} <small>copies</small></strong></div>)}</div>
-        {admin&&<div className="abb-book-footer"><div className="abb-cost-row"><span>Purchase cost: <strong>{costs[p.id]===undefined?'Not recorded':money(costs[p.id])}</strong></span><button className="secondary abb-btn" disabled={busy} onClick={()=>saveCost(p)}>{costs[p.id]===undefined?'Add purchase cost':'Edit purchase cost'}</button></div><div className="abb-stock-edit"><div className="abb-field"><label>{stockMode==='add'?'Copies to add':'New total copies'} (currently {qty(p.id,branch)})</label><input aria-label={'Copies for '+p.name} type="number" inputMode="numeric" min="0" step="1" value={quantities[`${branch}:${p.id}`]??''} onChange={e=>setQuantities(v=>({...v,[`${branch}:${p.id}`]:e.target.value}))}/></div><button className="primary abb-btn" disabled={busy||!branch} onClick={()=>saveStock(p)}>{stockMode==='add'?'Add copies':'Set stock'}</button></div><div className="abb-actions abb-book-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>edit(p)}>Edit product</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('products').update({is_active:!p.is_active}).eq('id',p.id),p.is_active?'Archive this book? Sales history will remain.':'Restore this book?')}>{p.is_active?'Archive':'Restore'}</button></div></div>}
+        {admin&&<div className="abb-book-footer"><div className="abb-cost-row"><span>Purchase cost: <strong>{costs[p.id]===undefined?'Not recorded':money(costs[p.id])}</strong></span><button className="secondary abb-btn" disabled={busy} onClick={()=>saveCost(p)}>{costs[p.id]===undefined?'Add purchase cost':'Edit purchase cost'}</button></div><div className="abb-stock-edit"><div className="abb-field"><label>{stockMode==='add'?'Copies to add':'New total copies'} (currently {qty(p.id,branch)})</label><input aria-label={'Copies for '+p.name} type="number" inputMode="numeric" min="0" step="1" value={quantities[`${branch}:${p.id}`]??''} onChange={e=>setQuantities(v=>({...v,[`${branch}:${p.id}`]:e.target.value}))}/></div><button className="primary abb-btn" disabled={busy||!branch} onClick={()=>saveStock(p)}>{stockMode==='add'?'Add copies':'Set stock'}</button></div><div className="abb-actions abb-book-actions"><button className="secondary abb-btn" disabled={busy} onClick={()=>edit(p)}>Edit product</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>mutate(()=>supabase.from('products').update({is_active:!p.is_active}).eq('id',p.id),p.is_active?'Archive this book? Sales history will remain.':'Restore this book?')}>{p.is_active?'Archive':'Restore'}</button><button className="secondary abb-btn abb-danger" disabled={busy} onClick={()=>safeDelete(p)}>Delete</button></div></div>}
       </article>)}</div>{!visible.length&&<p className="empty">No books to display.</p>}
       <div className="abb-pager"><button className="secondary" disabled={productPage===0} onClick={()=>setProductPage(v=>Math.max(0,v-1))}>Previous</button><span>Page {productPage+1} · {visible.length} matching products</span><button className="secondary" disabled={(productPage+1)*24>=visible.length} onClick={()=>setProductPage(v=>v+1)}>Next</button></div>
     </section>
