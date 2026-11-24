@@ -297,40 +297,13 @@ class AdminPageBoundary extends React.Component {
 }
 
 function AdminSettings(){
-  const [preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[pin,setPin]=useState(''),[success,setSuccess]=useState('');
-  async function checkReadiness(){
-    setBusy(true);setError('');
-    try {const {data,error:rpcError}=await supabase.rpc('pos_reset_preflight');if(rpcError)throw rpcError;setPreview(data);}
-    catch(e){setError(e.message||String(e));}finally{setBusy(false);}
-  }
-  async function executeReset(){
-    if(!preview?.ready){setError('Run readiness check and close all cash registers first.');return;}
-    if(!/^[0-9]{6}$/.test(pin)){setError('Enter your fresh six-digit admin PIN.');return;}
-    if(!window.confirm('Start a NEW financial reporting period for BOTH shops? Historical transactions and inventory will be preserved.'))return;
-    setBusy(true);setError('');setSuccess('');
-    try{
-      const {data,error:rpcError}=await supabase.rpc('pos_reset_financial_period',{p_pin:pin});
-      if(rpcError)throw rpcError;
-      if(!data?.ok)throw new Error(data?.error||'Reset was not completed.');
-      setSuccess('New financial reporting period started. Refresh the dashboard to view current-period totals.');
-      setPreview(null);
-    }catch(e){setError(e.message||String(e));}finally{setPin('');setBusy(false);}
-  }
-  return <div className="abb-page"><PageHead title="Settings" desc="Administration and production launch controls"/>
-    <section className="panel abb-panel"><h2>Production data reset</h2>
-      <p>Option A preserves products, schools, grades, purchase costs, and verified physical stock. Historical financial records and receipts must remain available for audit.</p>
-      <p className="premium-warning">This action starts a new reporting period. It does not delete historical receipts or change inventory. Close all shop cash registers first.</p>
-      <button className="secondary abb-btn" onClick={checkReadiness} disabled={busy}>{busy?'Checking…':'Check reset readiness (read-only)'}</button>
-      <Notice message={error}/>
-      {success&&<p className="success" role="status">{success}</p>}
-      <div className="abb-field"><label>Fresh admin PIN (required for every reset)</label><input type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="6-digit admin PIN"/></div>
-      <button className="primary abb-btn" disabled={busy||!preview?.ready||pin.length!==6} onClick={executeReset}>Start new financial reporting period</button>
-      {preview&&<div className="panel" role="status"><h3>{preview.ready?'Cash registers closed':'Reset blocked: open cash register'}</h3>
-        <p>Open registers: {preview.open_registers} | Historical sales: {preview.historical_sales} | Returns: {preview.historical_returns} | Expenses: {preview.historical_expenses}</p>
-        <p>Inventory stock rows preserved: {preview.stock_rows_preserved}. Reporting period: {preview.active_period_id}.</p>
-        <p>{preview.note}</p></div>}
-      <p>Historical receipts remain available. Current-period reporting starts from the reset time; physical inventory does not change.</p>
-    </section></div>;
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState('');
+ async function executeReset(){
+  if(busy||!window.confirm('Start a new financial reporting period? Historical receipts and inventory will be preserved.'))return;
+  setBusy(true);setError('');setSuccess('');
+  try{const {data,error}=await supabase.rpc('pos_reset_financial_period');if(error)throw error;if(!data?.ok)throw Error(data?.error||'Reset failed');setSuccess('New financial reporting period started.');}catch(e){setError(e.message);}finally{setBusy(false);}
+ }
+ return <div className="abb-page"><PageHead title="Settings" desc="Administration and production launch controls"/><section className="panel abb-panel"><h2>Production data reset</h2><p>Start a new financial reporting period. Historical receipts, products and inventory are preserved. Registers may remain open.</p><Notice message={error}/>{success&&<p className="success">{success}</p>}<button className="primary abb-btn" disabled={busy} onClick={executeReset}>{busy?'Resetting…':'Start new financial reporting period'}</button></section></div>;
 }
 
 function Schools() {
