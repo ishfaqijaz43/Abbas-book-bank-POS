@@ -92,6 +92,19 @@ const abbasResponsiveStyles = `
 const money = n => `Rs. ${Number(n || 0).toLocaleString('en-PK', { maximumFractionDigits: 2 })}`;
 const getError = (...results) => results.find(x => x?.error)?.error?.message || '';
 
+const narrowPrintCSS = `
+@media print {
+@page { margin: 0; }
+.abb-narrow-receipt, .ext-receipt.ext-modal { box-sizing:border-box!important; width:48mm!important; max-width:48mm!important; padding:1mm!important; margin:0 auto!important; font:700 11px/1.35 Arial,sans-serif!important; color:#000!important; background:#fff!important; box-shadow:none!important; border:0!important; overflow:visible!important; }
+.abb-narrow-receipt *, .ext-receipt.ext-modal * { color:#000!important; font-family:Arial,sans-serif!important; text-shadow:none!important; }
+.abb-narrow-receipt .thermal-meta {display:flex!important; justify-content:space-between!important; gap:2px!important; flex-wrap:wrap!important; font-size:11px!important;}
+.abb-narrow-receipt .thermal-logo {width:24mm!important;height:auto!important;}
+.abb-print-item {overflow-wrap:anywhere; margin:2mm 0; break-inside:avoid;}
+.abb-narrow-receipt .thermal-address {overflow-wrap:anywhere; font-size:10px!important;}
+.ext-receipt.ext-modal {position:static!important;transform:none!important;max-height:none!important;}
+.ext-receipt .ext-print-hide {display:none!important;}
+}
+`;
 function App() {
   const [access, setAccess] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -214,7 +227,7 @@ const adminNav=[['/admin','Dashboard',LayoutDashboard],['/admin/schools','School
 const sellerNav=[['/seller','New Sale',ShoppingCart],['/seller/catalog','Browse Books',BookOpen],['/seller/history','My Sales',LayoutDashboard],['/seller/stock','My Shop Stock',Package],['/seller/returns','Returns & Exchanges',ShoppingCart],['/seller/cash','Cash Register',Store]];
 function Shell({role,branchId,logout}) {
   const [open,setOpen]=useState(false);const nav=role==='admin'?adminNav:sellerNav;
-  return <div className="shell"><style>{abbasResponsiveStyles}</style><aside className={'sidebar '+(open?'open':'')}><div className="side-brand"><span className="brand-duo sidebar-brand-duo"><img src="/branding/abbas-book-bank.jpg" alt="Abbas Book Bank logo"/><img src="/branding/af-notebook.jpg" alt="AF Notebook logo"/></span><span><b>ABBAS BOOK BANK</b><small>BY AF NOTEBOOK</small></span></div><div className="role-label">{role==='admin'?'ADMIN WORKSPACE':'SELLER WORKSPACE'}</div><nav>{nav.map(([url,label,Icon])=><NavLink key={url} to={url} end onClick={()=>setOpen(false)} className={({isActive})=>isActive?'nav active':'nav'}><Icon size={19}/>{label}</NavLink>)}</nav></aside>
+  return <div className="shell"><style>{abbasResponsiveStyles+narrowPrintCSS}</style><aside className={'sidebar '+(open?'open':'')}><div className="side-brand"><span className="brand-duo sidebar-brand-duo"><img src="/branding/abbas-book-bank.jpg" alt="Abbas Book Bank logo"/><img src="/branding/af-notebook.jpg" alt="AF Notebook logo"/></span><span><b>ABBAS BOOK BANK</b><small>BY AF NOTEBOOK</small></span></div><div className="role-label">{role==='admin'?'ADMIN WORKSPACE':'SELLER WORKSPACE'}</div><nav>{nav.map(([url,label,Icon])=><NavLink key={url} to={url} end onClick={()=>setOpen(false)} className={({isActive})=>isActive?'nav active':'nav'}><Icon size={19}/>{label}</NavLink>)}</nav></aside>
     <div className="workspace"><header className="topbar"><button className="icon-btn mobile-only" onClick={()=>setOpen(!open)}><Menu/></button><div className="top-brand"><span className="brand-duo topbar-brand-duo"><img src="/branding/abbas-book-bank.jpg" alt="Abbas Book Bank logo"/><img src="/branding/af-notebook.jpg" alt="AF Notebook logo"/></span><span><b>Abbas Book Bank by AF Notebook</b><span className="top-sub">{role==='admin'?'Business management':'Sales counter · Selected shop'}</span></span></div><div className="abb-top-actions"><span className="role-pill">{role==='admin'?'Administrator':'Seller'}</span><button className="abb-top-signout" onClick={logout} title="Sign out"><LogOut size={16}/> <span>Sign out</span></button></div></header><div className="content"><Routes>{role==='admin'?<><Route path="/admin" element={<Dashboard/>}/><Route path="/admin/schools" element={<AdminPageBoundary><Schools/></AdminPageBoundary>}/><Route path="/admin/products" element={<Products admin/>}/><Route path="/admin/sales" element={<SalesLedger admin/>}/><Route path="/admin/shops" element={<ShopManager/>}/><Route path="/admin/operations" element={<Operations/>}/><Route path="/admin/returns" element={<Returns/>}/><Route path="/admin/staff" element={<Staff/>}/><Route path="/admin/reports" element={<Reports/>}/><Route path="/admin/cash" element={<AdminCashRegisters/>}/><Route path="/admin/expenses" element={<Expenses/>}/><Route path="/admin/settings" element={<AdminSettings/>}/><Route path="*" element={<Navigate to="/admin"/>}/></>:<><Route path="/seller" element={<POS branchId={branchId}/>}/><Route path="/seller/catalog" element={<Products/>}/><Route path="/seller/history" element={<SalesLedger/>}/><Route path="/seller/stock" element={<SellerStock branchId={branchId}/>}/><Route path="/seller/returns" element={<Returns seller/>}/><Route path="/seller/cash" element={<CashRegisterPage/>}/><Route path="*" element={<Navigate to="/seller"/>}/></>}</Routes><footer className="abb-credit">Developed by <strong>ByteCraft Solutions</strong></footer></div></div>{open&&<div className="overlay mobile-only" onClick={()=>setOpen(false)}/>}</div>;
 }
 function PageHead({title,desc,action}) {return <div className="page-head"><div><h1>{title}</h1><p className="muted">{desc}</p></div>{action}</div>;}
@@ -500,6 +513,8 @@ const whatsappReceiptText = (sale,shop) => {
     '',
     ...sale.items.map(x=>`${x.name} x ${x.qty} @ ${receiptMoney(x.price)} = ${receiptMoney(Number(x.price)*Number(x.qty))}`),
     '',
+    'Subtotal: '+receiptMoney(total+Number(sale.discount||0)),
+    'Discount: '+receiptMoney(sale.discount),
     'Grand Total: '+receiptMoney(total),
     'Payment: '+(sale.method==='cash'?'Cash':sale.method==='card'?'Card':sale.method==='bank_transfer'?'Bank transfer':'Other')
   ];
@@ -517,7 +532,7 @@ function ThermalReceipt({sale,shop}) {
   if(!sale)return null;
   const itemCount=sale.items.reduce((n,x)=>n+Number(x.qty),0);
   const cashReceived=sale.method==='cash' ? Number(sale.cashReceived) : null;
-  return <div className="thermal-receipt" aria-label="58mm invoice">
+  return <div className="thermal-receipt abb-narrow-receipt" aria-label="58mm invoice">
     <div className="thermal-center thermal-heading">INVOICE</div>
     <img className="thermal-logo" src="/branding/af-notebook.jpg" alt="AF Notebook"/>
     <div className="thermal-center thermal-business">ABBAS BOOK BANK</div>
@@ -527,12 +542,12 @@ function ThermalReceipt({sale,shop}) {
     <div className="thermal-meta"><span>Receipt</span><strong>{displayReceipt(sale.receipt_no)}</strong></div>
     <div className="thermal-meta"><span>Date</span><span>{sale.date}</span></div>
     <div className="thermal-rule"/>
-    <div className="thermal-meta"><span>P Mode</span><span>Items</span><span>Units</span><span>Amount</span></div>
-    <div className="thermal-meta"><span>{sale.method==='cash'?'Cash':sale.method==='bank_transfer'?'Bank':sale.method==='card'?'Card':'Other'}</span><span>{sale.items.length}</span><span>{itemCount}</span><span>{receiptMoney(sale.total)}</span></div>
+    <div className="thermal-meta"><span>Payment: {sale.method}</span><span>Units: {itemCount}</span></div>
     <div className="thermal-rule"/>
-    <table className="thermal-items"><thead><tr><th>Name</th><th>Price</th><th>Qty</th><th>Total</th></tr></thead><tbody>{sale.items.map((x,i)=><tr key={x.id||i}><td>{x.name}</td><td>{receiptMoney(x.price)}</td><td>{x.qty}</td><td>{receiptMoney(Number(x.price)*x.qty)}</td></tr>)}</tbody></table>
+    {sale.items.map((x,i)=><div className="abb-print-item" key={x.id||i}><strong>{x.name}</strong><div className="thermal-meta"><span>{x.qty} × {receiptMoney(x.price)}</span><strong>{receiptMoney(Number(x.price)*x.qty)}</strong></div></div>)}
     <div className="thermal-rule"/>
-    <div className="thermal-meta"><span>Subtotal</span><span>{receiptMoney(sale.total)}</span></div>
+    <div className="thermal-meta"><span>Subtotal</span><span>{receiptMoney(Number(sale.total)+Number(sale.discount||0))}</span></div>
+    <div className="thermal-meta"><span>Discount</span><span>{receiptMoney(sale.discount)}</span></div>
     <div className="thermal-meta thermal-grand"><span>Grand Total</span><span>{receiptMoney(sale.total)}</span></div>
     {sale.method==='cash'&&<><div className="thermal-rule"/><div className="thermal-meta"><span>Cash Received</span><span>{receiptMoney(cashReceived)}</span></div><div className="thermal-meta"><span>Change Amount</span><span>{receiptMoney(Math.max(0,cashReceived-Number(sale.total)))}</span></div></>}
     <div className="thermal-footer">Supporting your Child's Education</div>
@@ -545,6 +560,7 @@ function POS({branchId}) {
   const [stock,setStock]=useState(null),[view,setView]=useState('home'),[school,setSchool]=useState(''),[grade,setGrade]=useState('');
   const [query,setQuery]=useState(''),[cart,setCart]=useState([]),[held,setHeld]=useState(null);
   const [error,setError]=useState(''),[success,setSuccess]=useState(null),[busy,setBusy]=useState(false);
+  const [discount,setDiscount]=useState('');
   const [method,setMethod]=useState('cash'),[cash,setCash]=useState(''),[requestKey,setRequestKey]=useState(()=>crypto.randomUUID());
   const [cartOpen,setCartOpen]=useState(false),[shopName,setShopName]=useState('');
   const [customerWhatsapp,setCustomerWhatsapp]=useState('');
@@ -590,7 +606,10 @@ function POS({branchId}) {
     });
     setError('');setCartOpen(true);
   };
-  const total=cart.reduce((sum,x)=>sum+Number(x.price)*x.qty,0);
+  const subtotal=Math.round(cart.reduce((sum,x)=>sum+Number(x.price)*x.qty,0)*100)/100;
+  const discountValue=Number(discount||0);
+  const discountValid=Number.isFinite(discountValue)&&discountValue>=0&&discountValue<=subtotal&&Math.abs(discountValue*100-Math.round(discountValue*100))<0.000001;
+  const total=Math.round((subtotal-(discountValid?discountValue:0))*100)/100;
   const changeQty=(id,delta)=>{
     const p=products.find(x=>x.id===id);
     if(delta>0&&p&&!canAdd(p)){setError(`Insufficient stock for ${p.name}.`);return}
@@ -610,14 +629,15 @@ function POS({branchId}) {
   const back=()=>navigate(view==='grades'?'schools':view==='course'?'grades':'home');
   async function checkout(){
     if(busy||!cart.length)return;
+    if(!discountValid){setError('Enter a valid discount not exceeding subtotal.');return;}
     if(method==='cash'&&cash!==''&&Number(cash)<total){setError('Cash received is less than the total.');return}
     setBusy(true);setError('');setSuccess(null);
     try{
-      const {data,error:checkoutError}=await supabase.rpc('pos_checkout',{p_items:cart.map(x=>({product_id:x.id,quantity:x.qty})),p_request_key:requestKey,p_method:method});
+      const {data,error:checkoutError}=await supabase.rpc('pos_checkout_discount',{p_items:cart.map(x=>({product_id:x.id,quantity:x.qty})),p_request_key:requestKey,p_method:method,p_discount:discountValue});
       if(checkoutError)throw checkoutError;
-      const {data:receiptRow}=await supabase.from('sales').select('receipt_no').eq('id',data.sale_id).maybeSingle();
-      setSuccess({id:data.sale_id,receipt_no:receiptRow?.receipt_no,total:Number(data.total),method,items:cart.map(x=>({...x})),date:new Date().toLocaleString('en-PK'),cashReceived:method==='cash'&&cash!==''?Number(cash):Number(data.total)});
-      setCart([]);setCash('');setRequestKey(crypto.randomUUID());setCartOpen(false);
+      const {data:receiptRow}=await supabase.from('sales').select('receipt_no,discount_amount').eq('id',data.sale_id).maybeSingle();
+      setSuccess({id:data.sale_id,receipt_no:receiptRow?.receipt_no,total:Number(data.total),discount:Number(receiptRow?.discount_amount??discountValue),method,items:cart.map(x=>({...x})),date:new Date().toLocaleString('en-PK'),cashReceived:method==='cash'&&cash!==''?Number(cash):Number(data.total)});
+      setCart([]);setCash('');setDiscount('');setRequestKey(crypto.randomUUID());setCartOpen(false);
       setCustomerWhatsapp('');setWhatsappError('');
       if(stock!==null)setStock(prev=>{const next={...prev};for(const x of cart)next[x.id]=(next[x.id]??0)-x.qty;return next});
     }catch(e){setError(e.message||'Checkout failed. Please confirm sale status before retrying.')}
@@ -650,7 +670,7 @@ function POS({branchId}) {
     <span className="retail-product-action"><b>{money(p.price)}</b><span>+ Add</span></span>
   </button>;
   return <div className="retail-pos">
-    <div className="retail-header"><div><span className="retail-eyebrow">SELLER COUNTER</span><h1>New sale</h1><p>Find a course, book or stationery item in seconds.</p></div><div className="retail-header-actions"><button className="retail-outline" onClick={()=>{if(!cart.length)return;setHeld(cart);changeCart([]);setCartOpen(false)}} disabled={!cart.length}>Hold bill</button><button className="retail-outline" onClick={()=>{if(!held)return;changeCart(held);setHeld(null);setCartOpen(true)}} disabled={!held}>Resume{held?` (${held.length})`:''}</button></div></div>
+    <div className="retail-header"><div><span className="retail-eyebrow">SELLER COUNTER</span><h1>New sale</h1><p>Find a course, book or stationery item in seconds.</p></div><div className="retail-header-actions"><button className="retail-outline" onClick={()=>{if(!cart.length)return;setHeld({items:cart,discount});setDiscount('');changeCart([]);setCartOpen(false)}} disabled={!cart.length}>Hold bill</button><button className="retail-outline" onClick={()=>{if(!held)return;changeCart(held.items);setDiscount(held.discount);setHeld(null);setCartOpen(true)}} disabled={!held}>Resume{held?` (${held.items.length})`:''}</button></div></div>
     {error&&<p className="error" role="alert">{error}</p>}
     {success&&<section className="retail-receipt panel"><div><strong>✓ Sale completed</strong><p>Receipt #{displayReceipt(success.receipt_no)} · {money(success.total)}</p><small>{success.date}</small></div><div className="receipt-action-tools" style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center'}}>
       <button type="button" className="retail-outline" onClick={printReceipt}>Print receipt</button>
@@ -673,7 +693,7 @@ function POS({branchId}) {
     </main>
     <aside className={'retail-cart '+(cartOpen?'retail-cart-open':'')}><div className="retail-cart-heading"><h2><ShoppingCart size={20}/> Current bill <span>{cart.reduce((n,x)=>n+x.qty,0)}</span></h2><button className="retail-cart-close" onClick={()=>setCartOpen(false)}>Close</button></div>
       {!cart.length?<div className="retail-cart-empty"><span>🛒</span><strong>Your cart is empty</strong><p>Tap any product or complete course to add it.</p></div>:<div className="retail-cart-items">{cart.map(p=><div className="retail-cart-item" key={p.id}><div><strong>{p.name}</strong><small>{money(p.price)} each</small></div><div className="retail-qty"><button aria-label={`Remove one ${p.name}`} onClick={()=>changeQty(p.id,-1)}>−</button><b>{p.qty}</b><button aria-label={`Add one ${p.name}`} onClick={()=>changeQty(p.id,1)}>+</button><button aria-label={`Remove ${p.name}`} className="retail-remove" onClick={()=>changeCart(a=>a.filter(x=>x.id!==p.id))}><Trash2 size={15}/></button></div><strong>{money(p.price*p.qty)}</strong></div>)}</div>}
-      <div className="retail-cart-footer"><div className="retail-total"><span>Total payable</span><strong>{money(total)}</strong></div><label>Payment method<select value={method} onChange={e=>{setMethod(e.target.value);setRequestKey(crypto.randomUUID())}}><option value="cash">Cash</option><option value="card">Card (record only)</option><option value="bank_transfer">Bank transfer (record only)</option><option value="other">Other</option></select></label>{method==='cash'&&<label>Cash received (optional)<input type="number" min="0" step=".01" inputMode="decimal" value={cash} onChange={e=>setCash(e.target.value)} placeholder="Enter amount paid"/>{cash!==''&&Number(cash)>=total&&<small>Change: {money(Number(cash)-total)}</small>}</label>}<button className="primary full" disabled={!cart.length||busy} onClick={checkout}><CreditCard size={18}/>{busy?'Processing…':'Complete sale'}</button><p>Stock is deducted from the verified shop. Non-cash methods record payments only.</p></div>
+      <div className="retail-cart-footer"><div>Subtotal: {money(subtotal)}</div><label>Discount (Rs.)<input type="number" min="0" max={subtotal} step="0.01" value={discount} disabled={busy} onChange={e=>{setDiscount(e.target.value);setRequestKey(crypto.randomUUID())}} placeholder="0.00"/></label><div className="retail-total"><span>Total payable</span><strong>{money(total)}</strong></div><label>Payment method<select value={method} onChange={e=>{setMethod(e.target.value);setRequestKey(crypto.randomUUID())}}><option value="cash">Cash</option><option value="card">Card (record only)</option><option value="bank_transfer">Bank transfer (record only)</option><option value="other">Other</option></select></label>{method==='cash'&&<label>Cash received (optional)<input type="number" min="0" step=".01" inputMode="decimal" value={cash} onChange={e=>setCash(e.target.value)} placeholder="Enter amount paid"/>{cash!==''&&Number(cash)>=total&&<small>Change: {money(Number(cash)-total)}</small>}</label>}<button className="primary full" disabled={!cart.length||busy||!discountValid} onClick={checkout}><CreditCard size={18}/>{busy?'Processing…':'Complete sale'}</button><p>Stock is deducted from the verified shop. Non-cash methods record payments only.</p></div>
     </aside></div>
     <button className="retail-mobile-bill" onClick={()=>setCartOpen(true)}><ShoppingCart size={18}/> View bill · {cart.reduce((n,x)=>n+x.qty,0)} items <strong>{money(total)}</strong></button>
   </div>;
