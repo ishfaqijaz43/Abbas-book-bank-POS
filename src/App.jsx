@@ -1,3 +1,4 @@
+import {printThermal} from './thermalPrint';
 import React, { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
 import { BookOpen, LayoutDashboard, School, GraduationCap, Package, ShoppingCart, LogOut, Menu, Search, Plus, Trash2, CreditCard, Store, ArrowLeft, KeyRound } from 'lucide-react';
@@ -662,7 +663,7 @@ function POS({branchId}) {
   }
   function printReceipt(){
     if(!success)return;
-    window.print();
+    printThermal(document.querySelector('.abb-narrow-receipt'));
   }
   const listCard=p=><button type="button" key={p.id} className="retail-product" onClick={()=>add(p)} disabled={available(p)!==null&&available(p)<=quantityInCart(p.id)}>
     <span className="retail-product-icon">{isStationery(p)?'✏️':'📖'}</span>
