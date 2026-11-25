@@ -1,42 +1,37 @@
-// Print only receipt content, never the POS shell or modal backdrop.
-export function printThermal(source) {
-  if (!source) { alert('Receipt is not available.'); return; }
-  const popup = window.open('', '_blank', 'width=420,height=650');
-  if (!popup) { alert('Allow pop-ups for this POS, then print again.'); return; }
-  const doc = popup.document;
-  doc.open(); doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title></head><body></body></html>'); doc.close();
-  const style = doc.createElement('style');
-  style.textContent = `@page{margin:0;size:58mm 100mm} *{box-sizing:border-box} html,body{margin:0;padding:0;background:white;color:black} body{font: bold 12px/1.35 Arial,sans-serif} main{width:46mm;max-width:100%;margin:0 auto;padding:1mm 0;overflow-wrap:anywhere} main *{color:black!important;position:static!important;max-width:100%;height:auto;min-height:0;box-shadow:none!important} h2{font-size:14px;margin:3px 0} p{margin:3px 0} .thermal-center,.thermal-footer,h2{text-align:center} .thermal-logo{display:block;width:24mm;margin:2px auto} .thermal-meta,.abb-print-item>div{display:flex;justify-content:space-between;gap:4px;flex-wrap:wrap} .thermal-rule{border-top:1px dashed black;margin:4px 0} .abb-print-item{margin:4px 0;break-inside:avoid} .thermal-footer{margin-top:6px} .thermal-grand{font-size:14px} html,body{width:58mm;height:auto!important;min-height:0!important} main{display:flow-root;break-inside:auto} @media print{main{margin:0 auto} body{padding:0}}`;
-  doc.head.append(style);
-  const main = doc.createElement('main');
-  const copy = doc.importNode(source,true);
-  copy.querySelectorAll('button,input,select,textarea,.ext-print-hide,.ext-modal-actions').forEach(n=>n.remove());
-  // Discard outer modal layout and inline sizing inherited from the app.
-  while(copy.firstChild) main.append(copy.firstChild);
-  doc.body.append(main);
-  const images = Array.from(main.querySelectorAll('img'));
-  images.forEach(img=>{img.src=new URL(img.getAttribute('src'),window.location.href).href;});
-  const ready = Promise.all(images.map(img=>img.decode().catch(()=>{img.remove();})));
-  Promise.race([ready,new Promise(resolve=>setTimeout(resolve,2500))]).then(async()=>{
-    if(popup.closed)return;
-    images.forEach(img=>{if(!img.complete||!img.naturalWidth)img.remove();});
-    if(doc.fonts)await doc.fonts.ready;
-    if(popup.closed)return;
-    // Measure at the exact same width used in print, including padding.
-    const mm = Math.ceil(main.getBoundingClientRect().height * 25.4 / 96) + 2;
-    const page = doc.createElement('style');
-    page.textContent = `@page{size:58mm ${mm}mm;margin:0} @media print{html,body{width:58mm!important;height:auto!important;margin:0!important;padding:0!important}}`;
-    doc.head.append(page);
-    popup.requestAnimationFrame(()=>popup.requestAnimationFrame(()=>{if(!popup.closed){popup.focus();popup.print();}}));
-  });
+// Native text receipts, 32 columns verified by the USB test.
+const WIDTH = 32;
+let busy = false;
+function ascii(value) {
+  return String(value ?? '').replace(/×/g,'x').replace(/[–—]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/·/g,'-').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7e]/g,'?').replace(/ +/g,' ').trim();
 }
-export function printReturnSlip(slip) {
-  const root=document.createElement('div');
-  const add=(tag,value,cls)=>{const el=document.createElement(tag);el.textContent=value;if(cls)el.className=cls;root.append(el);};
-  add('h2','ABBAS BOOK BANK');add('div','RETURN SLIP','thermal-center');
-  add('p','Receipt: '+slip.receipt);add('p','Return ID: '+slip.id);add('p','Date: '+slip.date);add('p','Reason: '+slip.reason);
-  add('div','','thermal-rule');
-  slip.items.forEach(item=>{add('div',item.name,'abb-print-item');add('p','Quantity returned: '+item.quantity);});
-  add('div','','thermal-rule');add('h2','Refund due: '+slip.refund);add('p','Refund payment recorded separately.');
-  printThermal(root);
+function wrap(value) {
+  let s=ascii(value), lines=[];
+  while(s.length>WIDTH){let i=s.lastIndexOf(' ',WIDTH);if(i<=0)i=WIDTH;lines.push(s.slice(0,i));s=s.slice(i).trimStart();}
+  if(s)lines.push(s);return lines;
+}
+function pair(a,b){a=ascii(a);b=ascii(b);return a.length+b.length<WIDTH?[a+' '.repeat(WIDTH-a.length-b.length)+b]:[...wrap(a),...wrap(b)];}
+async function send(lines){
+  if(busy)return;busy=true;
+  try {const r=await fetch('http://localhost:18765/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:lines.join('\n')})});if(!r.ok)throw Error('Printer bridge returned '+r.status);}
+  catch(e){alert('Native printing failed or status unknown. Check the Windows printer bridge and print queue before retrying. '+e.message);}
+  finally{busy=false;}
+}
+export function printThermal(source){
+  if(!source){alert('Receipt is not available.');return;}
+  const lines=[];
+  function visit(n){
+    if(n.nodeType===3){lines.push(...wrap(n.textContent));return;}
+    if(n.nodeType!==1||n.matches('button,input,select,textarea,img,.ext-print-hide,.ext-modal-actions'))return;
+    if(n.matches('.thermal-rule')){lines.push('-'.repeat(WIDTH));return;}
+    if(n.matches('.thermal-meta,.abb-print-item > div')&&n.children.length===2){lines.push(...pair(n.children[0].textContent,n.children[1].textContent));return;}
+    if(!n.children.length){const a=wrap(n.textContent);lines.push(...(n.matches('h2,.thermal-center,.thermal-footer')?a.map(x=>' '.repeat(Math.floor((WIDTH-x.length)/2))+x):a));return;}
+    if(n.matches('p,h2,strong,span')){lines.push(...wrap(n.textContent));return;}
+    for(const child of n.childNodes)visit(child);
+  }
+  visit(source);return send(lines);
+}
+export function printReturnSlip(slip){
+  const lines=['        ABBAS BOOK BANK','          RETURN SLIP',...wrap('Receipt: '+slip.receipt),...wrap('Return ID: '+slip.id),...wrap('Date: '+slip.date),...wrap('Reason: '+slip.reason),'-'.repeat(WIDTH)];
+  for(const item of slip.items)lines.push(...wrap(item.name),...wrap('Quantity returned: '+item.quantity));
+  lines.push('-'.repeat(WIDTH),...pair('Refund due:',slip.refund),...wrap('Refund payment recorded separately.'));return send(lines);
 }
