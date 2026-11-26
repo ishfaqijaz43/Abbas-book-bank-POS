@@ -1,6 +1,26 @@
 // Native text receipts, 32 columns verified by the USB test.
 const WIDTH = 32;
 let busy = false;
+const recent = new Map();
+const DUPLICATE_MS = 8000;
+async function logoRaster() {
+  const img = new Image();
+  img.src = '/branding/af-notebook.jpg';
+  await img.decode();
+  const width = 192, height = Math.max(1, Math.min(192, Math.round(width * img.naturalHeight / img.naturalWidth)));
+  const canvas = document.createElement('canvas'); canvas.width=width; canvas.height=height;
+  const ctx=canvas.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,width,height);
+  const scale=Math.min(width/img.naturalWidth,height/img.naturalHeight);
+  const w=img.naturalWidth*scale,h=img.naturalHeight*scale;
+  ctx.drawImage(img,(width-w)/2,(height-h)/2,w,h);
+  const pixels=ctx.getImageData(0,0,width,height).data;
+  const bytes=new Uint8Array(width/8*height);
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+    const i=(y*width+x)*4;
+    if(pixels[i]*0.299+pixels[i+1]*0.587+pixels[i+2]*0.114<160)bytes[y*24+(x>>3)]|=128>>(x&7);
+  }
+  return {height,data:btoa(String.fromCharCode(...bytes))};
+}
 function ascii(value) {
   return String(value ?? '').replace(/×/g,'x').replace(/[–—]/g,'-').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/·/g,'-').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7e]/g,'?').replace(/ +/g,' ').trim();
 }
@@ -11,10 +31,18 @@ function wrap(value) {
 }
 function pair(a,b){a=ascii(a);b=ascii(b);return a.length+b.length<WIDTH?[a+' '.repeat(WIDTH-a.length-b.length)+b]:[...wrap(a),...wrap(b)];}
 async function send(lines){
-  if(busy)return;busy=true;
-  try {const r=await fetch('http://localhost:18765/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:lines.join('\n')})});if(!r.ok)throw Error('Printer bridge returned '+r.status);}
-  catch(e){alert('Native printing failed or status unknown. Check the Windows printer bridge and print queue before retrying. '+e.message);}
-  finally{busy=false;}
+  const text=lines.join('\n');
+  const now=Date.now();
+  for(const [key,time] of recent)if(now-time>=DUPLICATE_MS)recent.delete(key);
+  if(busy||recent.has(text))return;
+  busy=true;
+  recent.set(text,now);
+  try {
+    const logo=await logoRaster();
+    const r=await fetch('http://localhost:18765/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,logo})});
+    if(!r.ok)throw Error('Printer bridge returned '+r.status);
+  } catch(e){alert('Native printing failed or status unknown. Check the Windows printer bridge and print queue before retrying. '+e.message);}
+  finally{recent.set(text,Date.now());busy=false;}
 }
 export function printThermal(source){
   if(!source){alert('Receipt is not available.');return;}
